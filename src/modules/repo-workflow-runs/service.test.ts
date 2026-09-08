@@ -27,6 +27,10 @@ const mocks = vi.hoisted(() => ({
   trackedDrift: false,
   gitFailure: false,
   cleanupFailure: '',
+  finalFault: '',
+  artifactFault: '',
+  markerFault: false,
+  settledRunIds: [] as string[],
   duringCleanup: null as null | (() => Promise<void>),
   cleanupMutations: [] as { command: string; settled: boolean }[],
   duringObservation: null as null | (() => Promise<void>),
@@ -37,6 +41,37 @@ const mocks = vi.hoisted(() => ({
   wait: false,
   cancelled: false,
 }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      const path = String(args[0]);
+      if (mocks.artifactFault && /\/check-[a-f0-9]{64}$/.test(path)) {
+        const receipt = join(path, '..', 'cleanup-receipt.json');
+        if (mocks.artifactFault === 'missing')
+          await actual.rm(receipt, { force: true });
+        if (mocks.artifactFault === 'bad')
+          await actual.writeFile(receipt, '{}');
+        if (mocks.artifactFault === 'mismatched') {
+          const { trialHandle } = await import('./trial-store');
+          const { readSigned, writeSigned } = await import('../coding-runs');
+          const handle = await trialHandle(join(path, '..'));
+          const proof = (await readSigned(
+            receipt,
+            handle.attemptToken,
+          )) as object;
+          await writeSigned(receipt, handle.attemptToken, {
+            ...proof,
+            ownershipHash: '0'.repeat(64),
+          });
+        }
+        throw new Error('Synthetic stopped-worker artifact deletion failure');
+      }
+      return actual.rm(...args);
+    },
+  };
+});
 vi.mock('./trial-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./trial-store')>();
   return {
@@ -48,6 +83,19 @@ vi.mock('./trial-store', async (importOriginal) => {
       mocks.duringObservation = null;
       await hook?.();
       return actual.trialControllerState(controller);
+    },
+  };
+});
+vi.mock('./trial-checkout', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./trial-checkout')>();
+  return {
+    ...actual,
+    releaseTrialLock: async (
+      ...args: Parameters<typeof actual.releaseTrialLock>
+    ) => {
+      if (mocks.finalFault === 'unlock')
+        throw new Error('Synthetic transient unlock failure');
+      return actual.releaseTrialLock(...args);
     },
   };
 });
@@ -104,6 +152,21 @@ vi.mock('../coding-runs', async () => {
   const { createHash } = await import('node:crypto');
   return {
     ...io,
+    writeSigned: async (path: string, token: string, value: unknown) => {
+      const data = value as { phase?: string; runId?: string };
+      if (
+        path.endsWith('/result.json') &&
+        data.phase === 'complete' &&
+        mocks.finalFault === 'terminal'
+      )
+        throw new Error('Synthetic transient terminal save failure');
+      if (path.endsWith('/controller-task-settled.json')) {
+        mocks.settledRunIds.push(data.runId!);
+        if (mocks.markerFault)
+          throw new Error('Synthetic settlement marker failure');
+      }
+      return io.writeSigned(path, token, value);
+    },
     artifactHash: (s: string) => createHash('sha256').update(s).digest('hex'),
     hostGit: async (cwd: string, args: string[]) => {
       if (args[0] === 'remote')
@@ -227,6 +290,10 @@ beforeEach(async () => {
     trackedDrift: false,
     gitFailure: false,
     cleanupFailure: '',
+    finalFault: '',
+    artifactFault: '',
+    markerFault: false,
+    settledRunIds: [],
     duringCleanup: null,
     cleanupMutations: [],
     duringObservation: null,
@@ -1178,5 +1245,251 @@ it.each(['live', 'partial'])(
       guidance: expect.stringContaining('already claimed'),
     });
     expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+  },
+);
+
+it.each(['terminal', 'unlock'])(
+  'recovers after %s failure in finally while the controller PID remains alive',
+  async (fault) => {
+    mocks.finalFault = fault;
+    await start();
+    await vi.waitFor(() => expect(mocks.settledRunIds).toContain(runId));
+    const directory = join(root, 'repo-workflow-runs', runId);
+    const { readTrialOwnership } = await import('./trial-store');
+    expect((await readTrialOwnership(directory)).controller?.pid).toBe(
+      process.pid,
+    );
+    mocks.finalFault = '';
+    // A separate module instance has no local live/settled maps; it must use
+    // the authenticated exact-task marker, never infer death from map absence.
+    vi.resetModules();
+    const observer = await import('./service');
+    await vi.waitFor(async () => {
+      const result =
+        fault === 'terminal'
+          ? await observer.getRepoWorkflowRun('sample', runId, paths)
+          : await observer.cancelRepoWorkflowRun('sample', runId, paths);
+      expect(result).toMatchObject({ cleanup: 'complete', phase: 'complete' });
+      expect(await observer.getCurrentRepoWorkflowRun('sample', paths)).toEqual(
+        { run: null },
+      );
+    });
+    expect(mocks.cleanupMutations).toEqual([
+      { command: 'remove', settled: false },
+      { command: 'update-ref', settled: false },
+    ]);
+  },
+);
+it('uses bounded known-settled local task proof when the marker write also fails', async () => {
+  mocks.finalFault = 'terminal';
+  mocks.markerFault = true;
+  await start();
+  await vi.waitFor(() => expect(mocks.settledRunIds).toContain(runId));
+  mocks.finalFault = '';
+  mocks.markerFault = false;
+  await vi.waitFor(async () => {
+    expect(await cancelRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+      cleanup: 'complete',
+    });
+    expect(await getCurrentRepoWorkflowRun('sample', paths)).toEqual({
+      run: null,
+    });
+  });
+});
+it('a settled marker for a different logical task never authorizes same-PID recovery', async () => {
+  await start();
+  const terminal = await settled();
+  await vi.waitFor(() => expect(mocks.settledRunIds).toContain(runId));
+  const { randomUUID } = await import('node:crypto');
+  const directory = join(root, 'repo-workflow-runs', runId);
+  const { trialHandle, readTrialOwnership, saveTrialOwnership } =
+    await import('./trial-store');
+  const { artifactHash, writeSigned } = await import('../coding-runs');
+  const owner = await readTrialOwnership(directory);
+  owner.controllerTaskId = randomUUID();
+  await saveTrialOwnership(directory, owner);
+  const lock = join(
+    root,
+    'repo-workflow-runs',
+    `repo-${artifactHash('sample')}.lock`,
+  );
+  await mkdir(lock, { mode: 0o700 });
+  await writeFile(join(lock, 'run-id'), runId);
+  const handle = await trialHandle(directory);
+  await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+    ...terminal,
+    status: 'running',
+    phase: 'validation',
+    cleanup: 'pending',
+    finishedAt: null,
+  });
+  const mutations = mocks.cleanupMutations.length;
+  expect(await getRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+    status: 'running',
+    cleanup: 'pending',
+  });
+  expect(mocks.cancelled).toBe(false);
+  expect(mocks.cleanupMutations).toHaveLength(mutations);
+  expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+});
+
+it.each(['terminal', 'unlock'])(
+  'retries transient %s failure inside recovery while its claimant PID remains alive',
+  async (fault) => {
+    await start();
+    const terminal = await settled();
+    await vi.waitFor(() => expect(mocks.settledRunIds).toContain(runId));
+    const directory = join(root, 'repo-workflow-runs', runId);
+    const {
+      trialHandle,
+      readTrialOwnership,
+      saveTrialOwnership,
+      trialCleanupRecorded,
+    } = await import('./trial-store');
+    const { artifactHash, writeSigned } = await import('../coding-runs');
+    const owner = await readTrialOwnership(directory);
+    owner.jobs = [];
+    await saveTrialOwnership(directory, owner);
+    await rm(join(directory, 'cleanup-receipt.json'));
+    await mkdir(owner.root);
+    await writeFile(join(owner.root, '.git'), 'gitdir: fixture');
+    const lock = join(
+      root,
+      'repo-workflow-runs',
+      `repo-${artifactHash('sample')}.lock`,
+    );
+    await mkdir(lock, { mode: 0o700 });
+    await writeFile(join(lock, 'run-id'), runId);
+    const handle = await trialHandle(directory);
+    await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+      ...terminal,
+      status: 'running',
+      phase: 'cleanup',
+      cleanup: 'pending',
+      finishedAt: null,
+    });
+    mocks.finalFault = fault;
+    await expect(getRepoWorkflowRun('sample', runId, paths)).rejects.toThrow(
+      'Synthetic transient',
+    );
+    expect(
+      await trialCleanupRecorded(
+        directory,
+        await readTrialOwnership(directory),
+      ),
+    ).toBe(true);
+    // The recovery invocation settled and released its claim, not the repo lock.
+    await expect(
+      (await import('node:fs/promises')).lstat(
+        join(directory, 'recovery.lock'),
+      ),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(owner.controller?.pid).toBe(process.pid);
+    expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+    const mutations = mocks.cleanupMutations.length;
+    mocks.finalFault = '';
+    vi.resetModules();
+    const observer = await import('./service');
+    expect(
+      await observer.getRepoWorkflowRun('sample', runId, paths),
+    ).toMatchObject({ phase: 'complete', cleanup: 'complete' });
+    expect(await observer.getCurrentRepoWorkflowRun('sample', paths)).toEqual({
+      run: null,
+    });
+    expect(mocks.cleanupMutations).toHaveLength(mutations);
+    await mkdir(lock, { mode: 0o700 });
+    await writeFile(join(lock, 'run-id'), 'later-run');
+    expect(
+      await observer.getRepoWorkflowRun('sample', runId, paths),
+    ).toMatchObject({ cleanup: 'complete' });
+    expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe('later-run');
+  },
+);
+
+it.each(['valid', 'missing', 'bad', 'mismatched'])(
+  'artifact deletion failure with nonempty jobs releases only a %s cleanup proof',
+  async (proofState) => {
+    await start();
+    const terminal = await settled();
+    await vi.waitFor(() => expect(mocks.settledRunIds).toContain(runId));
+    const directory = join(root, 'repo-workflow-runs', runId);
+    const { trialHandle, readTrialOwnership } = await import('./trial-store');
+    const { artifactHash, writeSigned } = await import('../coding-runs');
+    const { recoverExistingCandidateCheck } =
+      await import('../factory-delivery');
+    const owner = await readTrialOwnership(directory);
+    expect(owner.jobs.length).toBeGreaterThan(0);
+    await rm(join(directory, 'cleanup-receipt.json'));
+    await mkdir(owner.root);
+    await writeFile(join(owner.root, '.git'), 'gitdir: fixture');
+    for (const job of owner.jobs) {
+      const artifact = join(directory, `check-${artifactHash(job.jobId)}`);
+      await mkdir(artifact, { mode: 0o700 });
+      await writeFile(join(artifact, 'retained-artifact'), 'evidence');
+    }
+    vi.mocked(recoverExistingCandidateCheck)
+      .mockReset()
+      .mockResolvedValue({ noWriter: true } as never);
+    const lock = join(
+      root,
+      'repo-workflow-runs',
+      `repo-${artifactHash('sample')}.lock`,
+    );
+    await mkdir(lock, { mode: 0o700 });
+    await writeFile(join(lock, 'run-id'), runId);
+    const handle = await trialHandle(directory);
+    await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+      ...terminal,
+      status: 'running',
+      phase: 'cleanup',
+      cleanup: 'pending',
+      finishedAt: null,
+    });
+    mocks.artifactFault = proofState;
+    expect(await getRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+      status: 'uncertain',
+      cleanup: 'retained',
+    });
+    expect(recoverExistingCandidateCheck).toHaveBeenCalledTimes(
+      owner.jobs.length,
+    );
+    const mutations = mocks.cleanupMutations.length;
+    expect(owner.controller?.pid).toBe(process.pid);
+    const claim = join(directory, 'recovery.lock');
+    const fs = await import('node:fs/promises');
+    if (proofState === 'valid')
+      await expect(fs.lstat(claim)).rejects.toMatchObject({ code: 'ENOENT' });
+    else expect((await fs.lstat(claim)).isDirectory()).toBe(true);
+    expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+    mocks.artifactFault = '';
+    vi.resetModules();
+    const observer = await import('./service');
+    expect(
+      await observer.getRepoWorkflowRun('sample', runId, paths),
+    ).toMatchObject({
+      cleanup: proofState === 'valid' ? 'complete' : 'retained',
+    });
+    expect(mocks.cleanupMutations).toHaveLength(mutations);
+    expect(
+      await readFile(
+        join(
+          directory,
+          `check-${artifactHash(owner.jobs[0].jobId)}`,
+          'retained-artifact',
+        ),
+        'utf8',
+      ),
+    ).toBe('evidence');
+    if (proofState === 'valid') {
+      expect(await observer.getCurrentRepoWorkflowRun('sample', paths)).toEqual(
+        { run: null },
+      );
+      await mkdir(lock, { mode: 0o700 });
+      await writeFile(join(lock, 'run-id'), 'later-run');
+      expect(
+        await observer.getRepoWorkflowRun('sample', runId, paths),
+      ).toMatchObject({ cleanup: 'complete' });
+      expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe('later-run');
+    } else expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
   },
 );

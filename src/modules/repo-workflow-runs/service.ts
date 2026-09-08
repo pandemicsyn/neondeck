@@ -41,6 +41,8 @@ import {
   claimTrialRecovery,
   captureTrialController,
   trialControllerState,
+  trialControllerTaskSettled,
+  markTrialControllerTaskSettled,
   requestTrialCancellation,
   trialCancellationRequested,
   trialCleanupRecorded,
@@ -109,7 +111,7 @@ async function inspectRepoWorkflowRun(
     !live.has(runPath(runId, paths))
   ) {
     // A different CLI/server process has its own map. Only durable identity
-    // observation can establish that this run's controller actually exited.
+    // observation or a matching settled-task proof can establish liveness.
     const directory = runPath(runId, paths);
     let owner: TrialOwnership;
     try {
@@ -126,8 +128,9 @@ async function inspectRepoWorkflowRun(
       };
     }
     const controller = await trialControllerState(owner.controller);
-    if (controller === 'alive') return result;
-    if (controller === 'unknown')
+    const taskSettled = await trialControllerTaskSettled(directory, owner);
+    if (!taskSettled && controller === 'alive') return result;
+    if (!taskSettled && controller === 'unknown')
       return {
         ...result,
         status: 'uncertain',
@@ -157,7 +160,9 @@ async function inspectRepoWorkflowRun(
         if (
           fresh.runId !== runId ||
           fresh.repoId !== repoId ||
-          JSON.stringify(fresh.controller) !== JSON.stringify(owner.controller)
+          JSON.stringify(fresh.controller) !==
+            JSON.stringify(owner.controller) ||
+          fresh.controllerTaskId !== owner.controllerTaskId
         ) {
           throw new Error('Controller identity changed during observation');
         }
@@ -211,6 +216,10 @@ async function inspectRepoWorkflowRun(
         }
         releaseClaim = false;
         await cleanupTrial(directory, owner);
+        // Cleanup has settled. Even if terminal persistence or unlock fails,
+        // release this authenticated claim in finally while still holding the
+        // SQLite guard so a later observer can resume from the cleanup receipt.
+        releaseClaim = true;
         result = {
           ...result,
           status: 'cancelled',
@@ -227,6 +236,16 @@ async function inspectRepoWorkflowRun(
         releaseClaim = true;
       }
     } finally {
+      if (!releaseClaim) {
+        // Git cleanup and stopped-worker proof can be durably complete even
+        // when removing a worker artifact directory subsequently fails.
+        // Only the matching authenticated receipt permits claim release.
+        try {
+          releaseClaim = await trialCleanupRecorded(directory, owner);
+        } catch {
+          /* Missing, invalid or mismatched proof retains the claim. */
+        }
+      }
       if (releaseClaim) await claim.release();
       else claim.close();
     }
@@ -369,6 +388,7 @@ export async function startRepoWorkflowRun(
   const root = join(directory, 'checkout');
   const ownership: TrialOwnership = {
     controller,
+    controllerTaskId: randomUUID(),
     runId,
     repoId,
     source: '',
@@ -689,7 +709,17 @@ export async function startRepoWorkflowRun(
           await rm(runPath(prior.id, paths), { recursive: true, force: true });
       }
     })
-    .finally(() => live.delete(directory));
+    .finally(async () => {
+      // The operation (including its cleanup finally) has now actually settled.
+      // A missing map entry alone cannot establish this across modules/processes.
+      try {
+        await markTrialControllerTaskSettled(directory, ownership);
+      } catch {
+        /* The bounded exact-identity local proof survives failed I/O. */
+      } finally {
+        live.delete(directory);
+      }
+    });
   live.set(directory, {
     done,
     cancel: async () => {

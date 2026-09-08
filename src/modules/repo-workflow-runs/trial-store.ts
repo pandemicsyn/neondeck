@@ -103,6 +103,7 @@ export async function requestTrialCancellation(directory: string) {
 }
 export const trialOwnershipSchema = v.strictObject({
   controller: v.optional(controllerSchema),
+  controllerTaskId: v.optional(v.pipe(v.string(), v.uuid())),
   runId: v.pipe(v.string(), v.uuid()),
   repoId: v.string(),
   source: v.string(),
@@ -145,6 +146,65 @@ export async function saveTrialOwnership(
     handle.attemptToken,
     v.parse(trialOwnershipSchema, owner),
   );
+}
+
+const taskSettlementSchema = v.strictObject({
+  runId: v.pipe(v.string(), v.uuid()),
+  repoId: v.string(),
+  controller: controllerSchema,
+  controllerTaskId: v.pipe(v.string(), v.uuid()),
+  state: v.literal('settled'),
+});
+const settledLocalTasks = new Map<string, string>();
+function taskSettlement(owner: TrialOwnership) {
+  if (!owner.controller || !owner.controllerTaskId) return null;
+  return v.parse(taskSettlementSchema, {
+    runId: owner.runId,
+    repoId: owner.repoId,
+    controller: owner.controller,
+    controllerTaskId: owner.controllerTaskId,
+    state: 'settled',
+  });
+}
+/** Called only after the execution/cleanup promise settles, never on map loss.
+ * Keep a bounded local proof if the same I/O failure also prevents the marker. */
+export async function markTrialControllerTaskSettled(
+  directory: string,
+  owner: TrialOwnership,
+) {
+  const proof = taskSettlement(owner);
+  if (!proof) throw new Error('Controller task identity missing');
+  settledLocalTasks.set(directory, JSON.stringify(proof));
+  while (settledLocalTasks.size > 256)
+    settledLocalTasks.delete(settledLocalTasks.keys().next().value!);
+  const handle = await trialHandle(directory);
+  await writeSigned(
+    join(directory, 'controller-task-settled.json'),
+    handle.attemptToken,
+    proof,
+  );
+}
+export async function trialControllerTaskSettled(
+  directory: string,
+  owner: TrialOwnership,
+) {
+  const expected = taskSettlement(owner);
+  if (!expected) return false;
+  if (settledLocalTasks.get(directory) === JSON.stringify(expected))
+    return true;
+  try {
+    const handle = await trialHandle(directory);
+    const proof = v.parse(
+      taskSettlementSchema,
+      await readSigned(
+        join(directory, 'controller-task-settled.json'),
+        handle.attemptToken,
+      ),
+    );
+    return JSON.stringify(proof) === JSON.stringify(expected);
+  } catch {
+    return false;
+  } // Unreadable/partial/mismatched state never proves settlement.
 }
 
 const recoveryClaimSchema = v.strictObject({
