@@ -89,7 +89,7 @@ export function FactoryValidationAttention({
               ? 'Recheck validation'
               : 'Retry validation admission'}
         </button>
-      ) : attention.nextAction === 'review-plan' && attention.reasonCode ? (
+      ) : attention.nextAction === 'review-plan' ? (
         onDiscuss ? (
           <button
             disabled={pending || stale}
