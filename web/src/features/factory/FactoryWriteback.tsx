@@ -421,8 +421,11 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                 )}
                 {['failed', 'uncertain', 'repair'].includes(effect.state) && (
                   <button
-                    disabled={unavailable || busy}
+                    // Relinquish has no expected-state binding: a refresh may
+                    // reconcile this retained effect to sent in the meantime.
+                    disabled={unavailable || busy || query.isFetching}
                     onClick={() =>
+                      !query.isFetching &&
                       void perform(() =>
                         recoverFactoryWriteback(
                           detail.work.id,

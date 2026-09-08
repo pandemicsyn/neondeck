@@ -17,6 +17,9 @@ on the factory task page. Polling and event-driven invalidation set React Query'
   remain bound to their fingerprints; changed settings still require review.
 - Do not let a background fetch become an accidental authorization gate. A user
   action submits the reviewed version/fingerprint, and the backend validates it.
+- Gate destructive writeback relinquish while its query refreshes: recovery has
+  no expected-state binding, and an uncertain receipt may reconcile to sent.
+  Keep read-only receipt checks and draft controls stable during that fetch.
 - Preserve selected task, pagination, focus, scroll, and unsaved drafts. Do not
   broaden into a redesign, change worker scheduling, or alter backend authority.
 

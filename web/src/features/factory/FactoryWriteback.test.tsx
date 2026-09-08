@@ -381,3 +381,90 @@ it('requires a fresh policy review when the background fingerprint changes', asy
   expect(container.textContent).not.toContain('Enable these status updates');
   expect(api.setFactoryWriteback).not.toHaveBeenCalled();
 });
+
+it.each([
+  { kind: 'status', nextState: 'sent' },
+  { kind: 'question', nextState: 'sent' },
+  { kind: 'status', nextState: 'uncertain' },
+  { kind: 'question', nextState: 'uncertain' },
+])(
+  'gates only relinquish while $kind recovery refreshes to $nextState',
+  async ({ kind, nextState }) => {
+    const initial = {
+      ...data,
+      effects: [
+        {
+          id: 'effect',
+          kind,
+          state: 'uncertain',
+          retryAt: 0,
+          body: 'Approved content',
+          specVersion: 1,
+          createdAt: '2026-09-06T00:00:00Z',
+          remoteId: null,
+          error: null,
+        },
+      ],
+    };
+    api.getFactoryWriteback.mockResolvedValue(initial);
+    await render();
+    const label =
+      kind === 'status'
+        ? 'Relinquish status management'
+        : 'Relinquish question reconciliation';
+    const button = (text: string) =>
+      [...container.querySelectorAll('button')].find(
+        (b) => b.textContent === text,
+      );
+    expect(button(label)!.disabled).toBe(false);
+    await click('Ask on GitHub');
+    await type('Retained draft');
+    const textarea = container.querySelector('textarea')!;
+    textarea.focus();
+    let resolve!: (value: typeof initial) => void;
+    api.getFactoryWriteback.mockImplementation(
+      () =>
+        new Promise((yes) => {
+          resolve = yes;
+        }),
+    );
+    await act(async () => {
+      void client.invalidateQueries({
+        queryKey: ['factory-writeback', 'work'],
+      });
+    });
+    await render();
+    expect(client.isFetching({ queryKey: ['factory-writeback', 'work'] })).toBe(
+      1,
+    );
+    expect(button(label)!.disabled).toBe(true);
+    expect(button('Refresh publishing')!.disabled).toBe(false);
+    expect(button('Recheck receipt (read only)')!.disabled).toBe(false);
+    expect(container.querySelector('fieldset')!.disabled).toBe(false);
+    expect(document.activeElement).toBe(textarea);
+    await click(label);
+    expect(api.recoverFactoryWriteback).not.toHaveBeenCalled();
+    await act(async () => {
+      resolve({
+        ...initial,
+        effects: [{ ...initial.effects[0], state: nextState }],
+      });
+    });
+    await render();
+    expect(container.querySelector('textarea')).toBe(textarea);
+    expect(textarea.value).toBe('Retained draft');
+    if (nextState === 'sent') {
+      expect(button(label)).toBeUndefined();
+      expect(container.textContent).toContain('· sent');
+      expect(api.recoverFactoryWriteback).not.toHaveBeenCalled();
+    } else {
+      expect(button(label)!.disabled).toBe(false);
+      await click(label);
+      expect(api.recoverFactoryWriteback).toHaveBeenCalledWith(
+        'work',
+        'effect',
+        'relinquish',
+      );
+    }
+  },
+);
