@@ -212,7 +212,7 @@ Only pending effects retire; sending/uncertain evidence remains conservative.
 Retirement runs locally before provider readiness/cooldown checks. Diagnostics
 exclude retired effects from unresolved work without claiming a successful send.
 
-Only pending deliveries consume the 5,000 active slots, including manual sync.
+Only pending non-removal deliveries consume the 5,000 active slots, including manual sync.
 Completed/attention deliveries share bounded history and retain their real status.
 Removed, disabled or stale source bindings are quarantined locally in bounded
 batches, allowing unrelated intake to recover without provider credentials.
@@ -253,6 +253,27 @@ Both independent integration reviews and the manager architecture review are
 lint, layers, migration checks, app/docs types, dashboard/server builds, package
 validation (1,281 files) and formatting. The same five host-process cases remain
 excluded; no live acceptance or full final-head verify pass is claimed.
+
+## Final merge preparation
+
+Final merge preparation addressed [removal capacity feedback](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3953929792):
+authenticated removals bypass the 5,000 pending provider-read limit, including
+during credential loss. Their pending records remain durable without a separate
+hard cap; processing still selects 25 removals per connection. Ordinary intake
+and manual retries share the bounded non-removal queue. Signed-ingress regression
+coverage verifies release withdrawal and reserved-run cancellation with a full
+create/update backlog and no API token. Identity conflicts and duplicates retain
+their existing behavior.
+
+Main `384a13fd` is integrated, preserving upstream candidate validation, separate
+publication approval and stable background refresh controls. Linear fixture
+releases now supply the reviewed validation policy. Both independent static
+reviews and the manager architecture review are **CLEAN** for this correction
+and integration. No package, model or persistence boundary changes were needed.
+Protected verification passed **3,308 tests across 304 files**, lint, layers,
+migration consistency, app/docs types, dashboard/server builds, package validation
+(1,286 files) and formatting. The same five host-process repair cases remain
+excluded under operator-home protection; live acceptance remains pending.
 
 ## Delivered scope and boundaries
 
@@ -302,9 +323,11 @@ remaining requests stop until the retained retry time, with a visible sync reaso
 Authenticated removal deliveries still withdraw authority during cooldown because
 they require no provider request; pending updates cannot starve their batch.
 Completed and attention deliveries share the latest 10,000 history entries;
-admission stops at 5,000 pending deliveries. Manual sync shares that capacity gate;
+ordinary admission stops at 5,000 pending non-removal deliveries. Manual sync shares that capacity gate;
 refreshing an already-pending retry consumes no new slot. Removed, disabled and
 stale bindings are quarantined in local batches of 25 before provider work.
+Authenticated removals bypass that cap and have no separate pending hard limit;
+their local processing remains bounded to 25 per connection per pass.
 Removal watermarks are retained independently of task
 admission and delivery pruning.
 

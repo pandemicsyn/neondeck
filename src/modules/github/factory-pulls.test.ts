@@ -560,3 +560,19 @@ it('fresh validators remain isolated by credential and are reusable after switch
     ),
   ).toEqual([null, null, '"credential-a"', '"credential-b"']);
 });
+
+it('accepts publication-only repository identity without intake fields', async () => {
+  reply([pull]);
+  const publication = {
+    owner: connection.owner,
+    name: connection.name,
+    repositoryId: connection.repositoryId,
+    tokenEnv: connection.tokenEnv,
+  };
+  expect(await lookupFactoryGitHubPull(publication, identity)).toMatchObject({
+    status: 'found',
+  });
+  expect(await lookupFactoryGitHubPull(connection, identity)).toMatchObject({
+    status: 'found',
+  });
+});

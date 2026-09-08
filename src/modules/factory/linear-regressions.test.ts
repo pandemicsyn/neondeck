@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from './validation-policy';
 import { retainLinearRateLimit } from './linear-cooldown';
 import { LinearApiError } from '../linear';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -73,7 +74,8 @@ function setup(enabled = false) {
       JSON.stringify({
         version: 1,
         factory: { enabled: true, linear: [next] },
-        models: { default: 'faux/faux-1' },
+        models: { default: 'faux/faux-1', prReview: 'faux/faux-1' },
+        guardrails: { requiredChecks: ['npm test'] },
       }),
     );
   config();
@@ -284,6 +286,7 @@ it.each(['remove', 'closed', 'config', 'echo', 'cooldown-remove'] as const)(
         sourceVersion: saved.source.version,
         repoFingerprint: saved.repoFingerprint,
         policyVersion: 'isolated-local-v1',
+        validationPolicy: factoryValidationPolicy('fixture', paths),
         expectedCodingConfigFingerprint: codingDigest(
           codingConfig(paths).coding,
         ),
@@ -538,6 +541,7 @@ it('refreshes retained authority during discovery failure and its backoff', asyn
       sourceVersion: saved.source.version,
       repoFingerprint: saved.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', paths),
       expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     human,

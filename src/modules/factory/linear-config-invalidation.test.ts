@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from './validation-policy';
 import { afterEach, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { fixture } from './testing/github-fixture';
@@ -65,7 +66,8 @@ function setup(connection = a) {
         linear: [connection, b],
         coding: { enabled: true, model: 'synthetic' },
       },
-      models: { default: 'faux/faux-1' },
+      models: { default: 'faux/faux-1', prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
     }),
   );
   const initial = dbRun(paths, (db) =>
@@ -100,6 +102,7 @@ function setup(connection = a) {
       sourceVersion: saved.source.version,
       repoFingerprint: saved.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', paths),
       expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     human,
@@ -191,6 +194,7 @@ function releaseCurrent(
       sourceVersion: current.source.version,
       repoFingerprint: current.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', paths),
       expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     { kind: 'human', id: 'operator' },

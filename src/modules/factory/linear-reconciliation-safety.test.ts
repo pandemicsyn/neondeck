@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from './validation-policy';
 import { LinearApiError } from '../linear';
 import { afterEach, expect, it, vi } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -64,7 +65,8 @@ function setup(enabled = false) {
       JSON.stringify({
         version: 1,
         factory: { enabled: true, linear: [next] },
-        models: { default: 'faux/faux-1' },
+        models: { default: 'faux/faux-1', prReview: 'faux/faux-1' },
+        guardrails: { requiredChecks: ['npm test'] },
       }),
     );
   config();
@@ -108,6 +110,7 @@ function releasedFixture() {
       sourceVersion: saved.source.version,
       repoFingerprint: saved.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', paths),
       expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     human,

@@ -27,11 +27,13 @@ import {
 import type { SetupStep } from '../types';
 
 export function RuntimeSection({
+  id,
   children,
   count,
   title,
   tone,
 }: {
+  id?: string;
   children: React.ReactNode;
   count: number;
   title: string;
@@ -46,7 +48,7 @@ export function RuntimeSection({
         : 'text-violet';
 
   return (
-    <section aria-labelledby={headingId}>
+    <section id={id} aria-labelledby={headingId}>
       <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] tracking-[0.12em]">
         <h3
           className={`m-0 text-[inherit] font-[inherit] ${toneClass}`}

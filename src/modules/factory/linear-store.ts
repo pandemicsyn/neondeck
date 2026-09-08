@@ -190,19 +190,25 @@ export function linearRecords<K extends LinearRecord['kind']>(
 }
 export function putLinearRecord(db: DatabaseSync, row: LinearRecord) {
   const value = v.parse(linearRecordSchema, row);
-  if (value.kind === 'delivery' && value.state === 'pending') {
+  // Signed removals carry local revocation authority and must remain admissible
+  // even when provider-dependent reads exhaust their queue during an outage.
+  if (
+    value.kind === 'delivery' &&
+    value.state === 'pending' &&
+    value.action !== 'remove'
+  ) {
     const existing = db
       .prepare(
-        "SELECT json_extract(record,'$.state') AS state FROM factory_linear_records WHERE id=? AND kind='delivery'",
+        "SELECT json_extract(record,'$.state') AS state, json_extract(record,'$.action') AS action FROM factory_linear_records WHERE id=? AND kind='delivery'",
       )
       .get(value.id);
     // Replacing an already pending retry consumes no additional queue capacity.
     if (
-      existing?.state !== 'pending' &&
+      !(existing?.state === 'pending' && existing.action !== 'remove') &&
       Number(
         db
           .prepare(
-            "SELECT COUNT(*) AS count FROM factory_linear_records WHERE kind='delivery' AND json_extract(record,'$.state')='pending'",
+            "SELECT COUNT(*) AS count FROM factory_linear_records WHERE kind='delivery' AND json_extract(record,'$.state')='pending' AND COALESCE(json_extract(record,'$.action'),'retry')!='remove'",
           )
           .get()!.count,
       ) >= 5000

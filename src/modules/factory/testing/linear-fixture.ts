@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from '../validation-policy';
 import { afterEach, expect } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { fixture } from './github-fixture';
@@ -55,7 +56,8 @@ export function setup(enabled = false) {
       JSON.stringify({
         version: 1,
         factory: { enabled: true, linear: [next] },
-        models: { default: 'faux/faux-1' },
+        models: { default: 'faux/faux-1', prReview: 'faux/faux-1' },
+        guardrails: { requiredChecks: ['npm test'] },
       }),
     );
   config();
@@ -99,6 +101,7 @@ export function releasedFixture(enabled = false) {
       sourceVersion: saved.source.version,
       repoFingerprint: saved.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', paths),
       expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     human,

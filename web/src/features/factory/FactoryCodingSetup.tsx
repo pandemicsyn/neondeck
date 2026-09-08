@@ -139,6 +139,9 @@ export function FactoryCodingSetup() {
                   await client.invalidateQueries({
                     queryKey: factoryCodingStateKey,
                   });
+                  await client.invalidateQueries({
+                    queryKey: ['factory-validation-policy'],
+                  });
                 }}
               />
             </div>

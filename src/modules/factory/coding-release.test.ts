@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from './validation-policy';
 import * as gitIo from '../../lib/git';
 import * as runtime from '../runtime';
 import { captureContext } from './planning-context';
@@ -30,6 +31,7 @@ import {
   reserveCodingRun,
 } from '../coding-runs';
 import {
+  codingAuthority,
   codingConfig,
   codingDigest,
   codingSnapshot,
@@ -55,7 +57,12 @@ function configure(changes: Partial<FactoryCodingConfig>) {
   const coding = { ...codingConfig(paths).coding, ...changes };
   writeFileSync(
     paths.config,
-    JSON.stringify({ version: 1, factory: { enabled: true, coding } }),
+    JSON.stringify({
+      version: 1,
+      models: { prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
+      factory: { enabled: true, coding },
+    }),
   );
 }
 beforeEach(async () => {
@@ -149,6 +156,7 @@ function releaseInput(work: ReturnType<typeof readyWork>) {
     sourceVersion: work.source.version,
     repoFingerprint: work.repoFingerprint,
     policyVersion: 'isolated-local-v1',
+    validationPolicy: factoryValidationPolicy('demo', paths),
     expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
   };
 }
@@ -633,6 +641,8 @@ it('binds native discovery to new release fingerprints and maps the frozen selec
     paths.config,
     JSON.stringify({
       version: 1,
+      models: { prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
       factory: { enabled: true, coding: legacyCoding },
     }),
   );
@@ -691,4 +701,34 @@ it('keeps the existing context budget for oversized repository inputs', async ()
       paths,
     ),
   ).rejects.toThrow('95,000-character budget');
+});
+
+it('keeps historical releases readable but rejects coding without validation authority', async () => {
+  configure({ enabled: true });
+  const released = release();
+  const { validationPolicy: _validationPolicy, ...historical } =
+    released.releases[0];
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+      JSON.stringify(historical),
+      historical.id,
+    );
+  } finally {
+    db.close();
+  }
+  const retained = getFactoryWork(released.work.id, paths);
+  expect(retained.releases[0].validationPolicy).toBeUndefined();
+  expect(retained.revisions).toEqual(released.revisions);
+  expect(() => codingAuthority(released.work.id, paths)).toThrow('ineligible');
+  const host = mockHost();
+  await expect(
+    dispatchCodingWork(released.work.id, paths, host, readiness),
+  ).rejects.toThrow('ineligible');
+  expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+  expect(host.launchLocalAttempt).not.toHaveBeenCalled();
+  expect(listCodingRuns({}, paths)).toEqual([]);
+  expect(getFactoryWork(released.work.id, paths).releases).toEqual(
+    retained.releases,
+  );
 });

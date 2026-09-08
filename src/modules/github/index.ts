@@ -149,3 +149,8 @@ export {
   observeFactoryGitHubPull,
   readFactoryGitHubPull,
 } from './factory-pulls';
+
+export {
+  factoryPullIdentitySchema,
+  resolveFactoryGitHubRepository,
+} from './factory-pulls';

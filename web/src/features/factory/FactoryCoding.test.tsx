@@ -4,6 +4,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FactoryCoding } from './FactoryCoding';
+import { FactoryCodingEvidence } from './FactoryCodingEvidence';
 import { FactoryCodingSetup } from './FactoryCodingSetup';
 import {
   codingRun,
@@ -162,7 +163,7 @@ it.each([
   ['needs-reconcile', 'Ownership needs reconciliation'],
   ['failed', 'Coding attempt failed'],
   ['cancelled', 'Coding stopped'],
-  ['candidate-awaiting-review', 'Candidate awaiting review'],
+  ['candidate-awaiting-review', 'Coding candidate retained'],
 ] satisfies [ReturnType<typeof codingRun>['displayStatus'], string][])(
   'renders %s clearly',
   async (status, text) => {
@@ -225,7 +226,7 @@ it('uses the real returned prepared diff identity in read-only review', async ()
     container.querySelector('[data-testid="prepared-review"]')?.textContent,
   ).toBe('candidate-demo read-only');
   expect(container.textContent).toContain(
-    'Checks and human review are still pending',
+    'Current checks, independent review and publication status',
   );
 });
 it('does not fabricate a diff when collection has no prepared review surface', async () => {
@@ -927,4 +928,134 @@ it('reloads the selected credential field from changed configuration', async () 
   expect(
     container.querySelector<HTMLInputElement>('[name="authPath"]')?.value,
   ).toBe('/synthetic/reloaded/auth.json');
+});
+it('keeps coding labels and actions stable during delayed background refetch and blocks a missing next task', async () => {
+  await render();
+  const stop = button('Stop coding');
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let resolve!: (value: Response) => void;
+  vi.mocked(fetch).mockImplementation((input, init) =>
+    String(input).includes('/runs?')
+      ? new Promise((yes) => {
+          resolve = yes;
+        })
+      : original(input, init),
+  );
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-coding-runs'] });
+  });
+  await flush();
+  expect(button('Refresh coding').disabled).toBe(false);
+  expect(stop.disabled).toBe(false);
+  await act(async () =>
+    resolve(
+      response({ items: [{ sequence: 1, run: current }], nextCursor: null }),
+    ),
+  );
+  await flush();
+  expect(button('Stop coding')).toBe(stop);
+  await act(async () => button('Refresh coding').click());
+  expect(button('Refreshing coding…').disabled).toBe(true);
+  await act(async () =>
+    resolve(
+      response({ items: [{ sequence: 1, run: current }], nextCursor: null }),
+    ),
+  );
+  await flush();
+  expect(button('Refresh coding').disabled).toBe(false);
+  await render(<FactoryCoding key="other" workId="other" eligible />);
+  expect(container.textContent).toContain('Loading coding attempts');
+  expect(container.textContent).not.toContain('Stop coding');
+  expect(button('Refresh coding').disabled).toBe(true);
+});
+it.each(['attempts', 'events'] as const)(
+  'serializes manual refresh and loading more %s without cancelling pagination',
+  async (kind) => {
+    const events = kind === 'events';
+    const matches = (url: string) =>
+      url.includes(events ? '/events?' : '/runs?');
+    const page = { items: [], nextCursor: 1 };
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) =>
+      matches(String(input))
+        ? Promise.resolve(response(page))
+        : original(input, init),
+    );
+    await render(
+      events ? (
+        <FactoryCodingEvidence id="run-demo" />
+      ) : (
+        <FactoryCoding workId="work-demo" eligible />
+      ),
+    );
+    if (events) {
+      await act(async () => {
+        const details = container.querySelector('details')!;
+        details.open = true;
+        details.dispatchEvent(new Event('toggle'));
+      });
+      await flush();
+      await flush();
+    }
+    let resolve!: (value: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    let requests = 0;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (!matches(String(input))) return original(input, init);
+      requests++;
+      signal = init?.signal;
+      return new Promise((yes) => {
+        resolve = yes;
+      });
+    });
+    const refreshLabel = events ? 'Refresh events' : 'Refresh coding';
+    const moreLabel = events ? 'Load more events' : 'Load more attempts';
+    await click(moreLabel);
+    expect(button(refreshLabel).disabled).toBe(true);
+    await click(refreshLabel);
+    expect(requests).toBe(1);
+    expect(signal?.aborted).toBe(false);
+    await act(async () => resolve(response({ items: [], nextCursor: 2 })));
+    await flush();
+    expect(button(refreshLabel).disabled).toBe(false);
+    await click(refreshLabel);
+    expect(button(moreLabel).disabled).toBe(true);
+    const pending = requests;
+    await click(moreLabel);
+    expect(requests).toBe(pending);
+    expect(signal?.aborted).toBe(false);
+  },
+);
+it('shows fresh-release waiting state and explicit access to a single historical coding attempt', async () => {
+  current = codingRun('candidate-awaiting-review');
+  await render(
+    <FactoryCoding
+      workId="work-demo"
+      eligible
+      currentReleaseId="fresh-release"
+    />,
+  );
+  expect(container.textContent).toContain('awaiting automatic dispatch');
+  expect(container.querySelector('.factory-coding-run')).toBeNull();
+  const picker = container.querySelector<HTMLSelectElement>(
+    '.factory-coding-attempt-picker select',
+  )!;
+  expect(picker.value).toBe('');
+  await act(async () => {
+    picker.value = current!.record.runId;
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flush();
+  await flush();
+  expect(container.querySelector('.factory-coding-run')).not.toBeNull();
+  await render(
+    <FactoryCoding
+      workId="work-demo"
+      eligible
+      currentReleaseId="fresh-release"
+      currentNavigation={1}
+    />,
+  );
+  expect(container.querySelector('.factory-coding-run')).toBeNull();
+  expect(container.textContent).toContain('awaiting automatic dispatch');
 });

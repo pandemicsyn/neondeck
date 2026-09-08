@@ -310,3 +310,53 @@ export function deliveryBudget(input: DeliveryPipeline) {
     repairsRemaining: r.authorization.maxRepairAttempts - r.repairs.length,
   };
 }
+
+export function publicationEvidenceFingerprint(
+  r: DeliveryPipeline,
+  revision = r.revision,
+) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        revision,
+        validationContractDigest: deliveryValidationContractDigest(r),
+        evidence: r.evidence.filter((e) =>
+          sameDeliveryRevision(e.revision, revision),
+        ),
+      }),
+    )
+    .digest('hex');
+}
+export function assertPublicationAuthorized(r: DeliveryPipeline) {
+  if (r.authorization.mode !== 'local-validation')
+    throw new Error('Historical delivery requires a fresh release.');
+  const grant = r.publication;
+  if (
+    !grant ||
+    !sameScope(grant.revision, r.initialRevision) ||
+    grant.evidenceFingerprint !==
+      publicationEvidenceFingerprint(r, grant.revision) ||
+    !isDeepStrictEqual(grant.target, r.authorization.target) ||
+    (!r.pr && !sameDeliveryRevision(grant.revision, r.revision))
+  )
+    throw new Error(
+      'Separate exact-candidate publication authorization required.',
+    );
+}
+export function awaitsPublication(r: DeliveryPipeline) {
+  if (
+    r.authorization.mode !== 'local-validation' ||
+    r.publication ||
+    r.outcome ||
+    r.interventions.some((i) => !i.resolution) ||
+    unresolvedEffects(r) ||
+    r.repairs.some((repair) => repair.status === 'reserved')
+  )
+    return false;
+  try {
+    currentPasses(r);
+    return true;
+  } catch {
+    return false;
+  }
+}

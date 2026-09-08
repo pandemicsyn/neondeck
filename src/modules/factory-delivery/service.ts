@@ -1,3 +1,5 @@
+import { admitReleasedValidation } from './validation-service';
+import { awaitsPublication } from './delivery-aggregate';
 import { withFactorySpan, deliveryCorrelation } from '../factory-observability';
 import {
   settleEffectNonadmission,
@@ -46,6 +48,7 @@ export async function tickFactoryDelivery(
   paths: RuntimePaths,
   io: DeliveryIO = deliveryIO,
 ): Promise<void> {
+  await admitReleasedValidation(paths);
   let after = 0;
   for (;;) {
     const rows = listDeliveryPipelines({ after, limit: 100 }, paths);
@@ -87,6 +90,15 @@ export function advanceFactoryDelivery(
     let pipeline = requireDelivery(id, paths);
     if (pipeline.outcome) {
       await io.cancel(pipeline, paths);
+      await io.recoverProgress(pipeline, paths);
+      return;
+    }
+    if (pipeline.authorization.mode !== 'local-validation') {
+      await io.cancel(pipeline, paths);
+      const outstanding = pipeline.effects.find(
+        (e) => e.state === 'in-flight' || e.state === 'uncertain',
+      );
+      if (outstanding) await io.recover(pipeline, outstanding, paths);
       await io.recoverProgress(pipeline, paths);
       return;
     }
@@ -246,6 +258,7 @@ export function advanceFactoryDelivery(
       );
       return;
     }
+    if (awaitsPublication(pipeline)) return;
     let kind: DeliveryEffect['kind'];
     if (!verification) kind = 'verification';
     else if (!review) kind = 'review';

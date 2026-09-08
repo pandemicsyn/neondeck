@@ -10,13 +10,16 @@ export function FactoryDeliveryRevision({
 }) {
   return (
     <>
-      <p>
-        Spec v{revision.specVersion} · candidate{' '}
-        <code>{revision.candidateDigest.slice(0, 10)}</code> · tree{' '}
-        <code>{revision.treeSha.slice(0, 10)}</code>
-      </p>
       <details>
-        <summary>Revision details</summary>
+        <summary>
+          Candidate and revision details · brief v{revision.specVersion}
+        </summary>
+        <p>
+          Spec v{revision.specVersion} · candidate{' '}
+          <code>{revision.candidateDigest.slice(0, 10)}</code> · tree{' '}
+          <code>{revision.treeSha.slice(0, 10)}</code>
+        </p>
+
         <dl className="factory-coding-facts factory-delivery-revision">
           <div>
             <dt>Candidate / attempt</dt>

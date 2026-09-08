@@ -1,3 +1,4 @@
+import { approveTestPublication } from './publication.test-helper';
 import { approveTestProgress } from './progress-test-helpers';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { claimWatchAutopilotTurn, transitionWatchAutopilot } from '../watches';
@@ -46,6 +47,7 @@ const reservation: DeliveryReservation = {
   repoId: 'repo',
   initialRevision: revision,
   authorization: {
+    mode: 'local-validation',
     id: 'grant',
     authorizedBy: 'human',
     authorizedAt: '2026-09-06T00:00:00.000Z',
@@ -111,9 +113,12 @@ function evidence(
     : r;
 }
 function ready() {
-  return evidence(
-    evidence(reserveDeliveryPipeline(reservation, paths), 'verification'),
-    'review',
+  return approveTestPublication(
+    evidence(
+      evidence(reserveDeliveryPipeline(reservation, paths), 'verification'),
+      'review',
+    ),
+    paths,
   );
 }
 function plan(r: DeliveryPipeline, kind: 'push' | 'create-pr' | 'commit') {
@@ -207,6 +212,7 @@ describe('factory delivery foundation', () => {
         {
           ...reservation,
           authorization: {
+            mode: 'local-validation',
             ...reservation.authorization,
             revision: { ...revision, treeSha: 'f'.repeat(40) },
           },
@@ -247,7 +253,9 @@ describe('factory delivery foundation', () => {
   });
   it('requires exact independent current evidence', () => {
     let r = reserveDeliveryPipeline(reservation, paths);
-    expect(() => plan(r, 'push')).toThrow('independent verification');
+    expect(() => approveTestPublication(r, paths)).toThrow(
+      'independent verification',
+    );
     expect(() =>
       update(r, {
         type: 'record-evidence',
@@ -290,8 +298,11 @@ describe('factory delivery foundation', () => {
       'passed',
       'same',
     );
-    expect(() => plan(r, 'push')).toThrow('independent verification');
+    expect(() => approveTestPublication(r, paths)).toThrow(
+      'independent verification',
+    );
     r = evidence(r, 'review');
+    r = approveTestPublication(r, paths);
     r = plan(r, 'push');
     r = evidence(r, 'verification', 'failed');
     expect(() =>
@@ -462,6 +473,7 @@ describe('factory delivery foundation', () => {
       {
         ...reservation,
         authorization: {
+          mode: 'local-validation',
           ...reservation.authorization,
           totalExecutionMs: 2701000,
         },
@@ -545,6 +557,7 @@ describe('reviewer A regressions', () => {
           ...reservation,
           initialRevision: next,
           authorization: {
+            mode: 'local-validation',
             ...reservation.authorization,
             id: 'new-grant',
             revision: next,
@@ -573,7 +586,9 @@ describe('reviewer A regressions', () => {
       'review',
       false,
     );
-    expect(() => plan(r, 'push')).toThrow('independent verification');
+    expect(() => approveTestPublication(r, paths)).toThrow(
+      'independent verification',
+    );
     const review = r.evidence.at(-1)!;
     expect(() =>
       update(r, {
@@ -591,14 +606,21 @@ describe('reviewer A regressions', () => {
       receiptRef: review.evidenceRef,
       executionMs: 1,
     });
-    expect(plan(r, 'push').effects.at(-1)!.kind).toBe('push');
+    expect(
+      plan(approveTestPublication(r, paths), 'push').effects.at(-1)!.kind,
+    ).toBe('push');
   });
   it('requires fresh linked review when a successful verification bundle replaces another', () => {
-    let r = ready();
+    let r = evidence(
+      evidence(reserveDeliveryPipeline(reservation, paths), 'verification'),
+      'review',
+    );
     r = evidence(r, 'verification');
     expect(() => plan(r, 'commit')).toThrow();
     r = evidence(r, 'review');
-    expect(plan(r, 'commit').effects.at(-1)!.kind).toBe('commit');
+    expect(
+      plan(approveTestPublication(r, paths), 'commit').effects.at(-1)!.kind,
+    ).toBe('commit');
   });
   it('rejects persisted evidence whose receipt linkage is corrupted', () => {
     const r = ready();
@@ -954,6 +976,7 @@ it('rejects over-limit grants before reserving a pipeline, while admitting all 1
   const input = {
     ...reservation,
     authorization: {
+      mode: 'local-validation',
       ...reservation.authorization,
       checkCommands: Array.from({ length: 17 }, (_, i) => `npm run check-${i}`),
     },

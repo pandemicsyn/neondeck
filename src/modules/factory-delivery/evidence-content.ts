@@ -1,3 +1,4 @@
+import { deliveryEvidenceDisplayMaxBytes } from '../../../shared/factory-delivery-evidence';
 import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import {
@@ -50,7 +51,7 @@ export function sanitizeEvidenceText(
     stderr: '',
     exitCode: 0,
     durationMs: 0,
-    outputLimit: 1048576,
+    outputLimit: deliveryEvidenceDisplayMaxBytes,
   }).stdout;
   for (const root of [paths.home, homedir()])
     if (root.length > 1) text = text.split(root).join('[local path]');
@@ -82,7 +83,8 @@ export function sanitizeEvidenceText(
     .replace(/[A-Za-z]:\\(?:Users|Windows|Temp)\\[^\s"'<>]+/g, '[local path]');
   return {
     text: text.slice(0, max),
-    truncated: text.length > max || value.length > 1048576,
+    truncated:
+      text.length > max || value.length > deliveryEvidenceDisplayMaxBytes,
   };
 }
 export async function readRetainedEvidenceReceipt(

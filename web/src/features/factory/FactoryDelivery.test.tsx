@@ -5,7 +5,10 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as v from 'valibot';
 import { FactoryDelivery } from './FactoryDelivery';
-import { deliveryGrantPreviewSchema } from '../../../../shared/factory-delivery-api';
+import {
+  publicationGrantInputSchema,
+  validationGrantPreviewSchema,
+} from '../../../../shared/factory-delivery-api';
 import {
   deliveryDetail,
   deliveryPreview,
@@ -14,7 +17,7 @@ import {
 import {
   deliveryDetailSchema,
   getFactoryDelivery,
-  getFactoryDeliveryPreview,
+  getFactoryReviewedDiff,
   type DeliveryDetail,
 } from '../../api/factory-delivery';
 let container: HTMLDivElement;
@@ -22,6 +25,7 @@ let root: ReturnType<typeof createRoot>;
 let client: QueryClient;
 let current: DeliveryDetail | undefined;
 let postStatus: number;
+let publicationBlocked: boolean;
 let calls: { url: string; body: unknown }[];
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -41,6 +45,7 @@ beforeEach(() => {
   });
   current = undefined;
   postStatus = 200;
+  publicationBlocked = false;
   calls = [];
   sessionStorage.clear();
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -50,8 +55,49 @@ beforeEach(() => {
       if (postStatus !== 200)
         return response({ error: 'Synthetic conflict' }, postStatus);
       current = deliveryDetail();
+      if (url.endsWith('/publication-grants')) {
+        const body = v.parse(
+          publicationGrantInputSchema,
+          JSON.parse(String(init.body)),
+        );
+        current.pipeline.publication = {
+          requestId: body.requestId,
+          requestFingerprint: '1'.repeat(64),
+          authorizedBy: 'operator',
+          authorizedAt: '2026-09-07T12:00:00.000Z',
+          revision: body.preview.revision,
+          evidenceFingerprint: body.preview.evidenceFingerprint,
+          configFingerprint: body.preview.configFingerprint,
+          target: body.preview.target,
+        };
+      }
       return response(current);
     }
+    if (url.endsWith('/reviewed-diff'))
+      return response({
+        pipelineId: 'delivery-demo',
+        revision: current?.pipeline.revision ?? deliveryPreview().revision,
+        evidenceFingerprint: 'a'.repeat(64),
+        diff: '',
+        unavailableReason: null,
+      });
+    if (url.endsWith('/publication'))
+      return response(
+        publicationBlocked
+          ? {
+              ready: false,
+              blocker: 'publication-setup',
+              message:
+                'Choose the repository credential reference in publication setup.',
+              preview: null,
+            }
+          : {
+              ready: true,
+              blocker: null,
+              message: 'Ready',
+              preview: publicationPreview(),
+            },
+      );
     if (url.includes('/evidence/')) {
       const evidence = deliveryEvidenceContent(url.split('/').at(-1));
       const selected = current?.pipeline.evidence.find(
@@ -66,7 +112,6 @@ beforeEach(() => {
     }
     if (url.endsWith('/state'))
       return response({ deliveries: current ? [current] : [] });
-    if (url.includes('/candidates/')) return response(deliveryPreview());
     return response(current);
   });
 });
@@ -84,11 +129,13 @@ async function flush() {
 async function render(
   onDiscuss?: (evidence: string) => void,
   runId = 'candidate-demo',
+  automaticValidation = false,
 ) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
         <FactoryDelivery
+          automaticValidation={automaticValidation}
           runId={runId}
           releaseId="release-03"
           workId="work-demo"
@@ -116,43 +163,6 @@ async function consent() {
     container.querySelector<HTMLInputElement>('input[type=checkbox]')!.click(),
   );
 }
-it('requires exact human consent and posts the visible immutable preview', async () => {
-  await render();
-  expect(calls).toHaveLength(0);
-  expect(button('Grant bounded draft delivery').disabled).toBe(true);
-  expect(container.textContent).toContain('release-03');
-  expect(container.textContent).toContain('45 minutes per attempt');
-  expect(container.textContent).toContain(
-    'Merge and deployment are never authorized',
-  );
-  await consent();
-  await click('Grant bounded draft delivery');
-  expect(calls).toHaveLength(1);
-  expect(calls[0].body).toEqual({
-    requestId: expect.any(String),
-    confirm: true,
-    preview: deliveryPreview(),
-  });
-});
-it('replays an uncertain grant with identical id and preview', async () => {
-  postStatus = 503;
-  await render();
-  await consent();
-  await click('Grant bounded draft delivery');
-  await click('Retry original delivery grant');
-  expect(calls).toHaveLength(2);
-  expect(calls[1].body).toEqual(calls[0].body);
-});
-it('requires a fresh review and new consent after version conflict', async () => {
-  postStatus = 409;
-  await render();
-  await consent();
-  await click('Grant bounded draft delivery');
-  expect(container.textContent).toContain('Version conflict');
-  expect(button('Retry original delivery grant').disabled).toBe(true);
-  await click('Review a fresh grant');
-  expect(button('Grant bounded draft delivery').disabled).toBe(true);
-});
 it('renders loading and unsupported state without granting', async () => {
   vi.mocked(fetch).mockImplementation(() => new Promise<Response>(() => {}));
   await render();
@@ -221,9 +231,17 @@ it('disables controls when refreshed detail fails', async () => {
   expect(button('Revoke delivery authority').disabled).toBe(true);
 });
 it('rejects mismatched requested identities independently', async () => {
-  vi.mocked(fetch).mockResolvedValue(response(deliveryPreview()));
-  await expect(getFactoryDeliveryPreview('foreign-run')).rejects.toThrow(
-    'identity',
+  vi.mocked(fetch).mockResolvedValue(
+    response({
+      pipelineId: 'other',
+      revision: deliveryPreview().revision,
+      evidenceFingerprint: 'a'.repeat(64),
+      diff: '',
+      unavailableReason: null,
+    }),
+  );
+  await expect(getFactoryReviewedDiff('foreign-run')).rejects.toThrow(
+    'another delivery',
   );
   vi.mocked(fetch).mockResolvedValue(response(deliveryDetail()));
   await expect(getFactoryDelivery('foreign-delivery')).rejects.toThrow(
@@ -248,7 +266,7 @@ it('rejects unknown actions and malformed authority on the dashboard boundary', 
     }
   }
   expect(() =>
-    v.parse(deliveryGrantPreviewSchema, {
+    v.parse(validationGrantPreviewSchema, {
       ...deliveryPreview(),
       initialExecutionMs: 10800001,
     }),
@@ -288,7 +306,7 @@ it('does not reuse passed evidence from an older tree', async () => {
   };
   await render();
   expect(container.textContent).toContain(
-    'Independent checks: Pending, no current evidence',
+    'Independent checks: Not started for this candidate',
   );
   expect(container.textContent).toContain(
     'Prior or unmatched evidence, not current certification',
@@ -314,18 +332,22 @@ it('does not present an unmatched review bundle as a current passing review', as
   current.pipeline.evidence[1].verificationBundleDigest = '7'.repeat(64);
   await render();
   expect(container.textContent).toContain(
-    'Fresh read-only review: Pending, no current evidence',
+    'Fresh read-only review: Not started for this candidate',
   );
 });
 it('keeps full revision provenance accessible in a closed native disclosure', async () => {
+  current = deliveryDetail();
   await render();
-  const revision = [...container.querySelectorAll('details')].find(
-    (item) => item.querySelector('summary')?.textContent === 'Revision details',
+  const revision = [...container.querySelectorAll('details')].find((item) =>
+    item
+      .querySelector('summary')
+      ?.textContent?.trim()
+      .startsWith('Candidate and revision details'),
   );
   expect(revision?.open).toBe(false);
   expect(revision?.textContent).toContain(deliveryPreview().revision.treeSha);
   expect(revision?.textContent).toContain(deliveryPreview().configFingerprint);
-  expect(button('Grant bounded draft delivery').disabled).toBe(true);
+  expect(calls).toHaveLength(0);
 });
 it('places the human intervention before technical provenance and evidence history', async () => {
   current = deliveryDetail('intervention');
@@ -555,4 +577,190 @@ it('distinguishes recorded in-flight checks from waiting without a polling live 
   expect(container.textContent).not.toContain(
     'No checks or review are confirmed running',
   );
+});
+it('does not request another validation grant for an automatically authorized candidate', async () => {
+  await render(undefined, 'candidate-demo', true);
+  expect(container.textContent).toContain(
+    'Preparing checks and independent review',
+  );
+  expect(container.querySelector('input[type=checkbox]')).toBeNull();
+  expect(container.textContent).not.toContain('Start checks and review');
+  expect(calls).toHaveLength(0);
+});
+it('requires separate publication consent and posts the exact reviewed candidate', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'awaiting-publication';
+  await render();
+  expect(button('Create draft PR').disabled).toBe(true);
+  expect(container.textContent).toContain('does not reset');
+  const expected = publicationPreview();
+  await consent();
+  await click('Create draft PR');
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toEqual({
+    url: '/api/factory-delivery/deliveries/delivery-demo/publication-grants',
+    body: { requestId: expect.any(String), confirm: true, preview: expected },
+  });
+});
+it('blocks publication when the current review has not started even if readiness says ready', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'awaiting-publication';
+  current.pipeline.evidence.pop();
+  await render();
+  expect(button('Create draft PR').disabled).toBe(true);
+  expect(container.textContent).toContain(
+    'must pass for the current candidate',
+  );
+  expect(calls).toHaveLength(0);
+});
+it('preserves a task return link for publication setup without mutating intake', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'awaiting-publication';
+  publicationBlocked = true;
+  await render();
+  expect(
+    container.querySelector('a[href="/factory?task=work-demo"]'),
+  ).not.toBeNull();
+  expect(container.textContent).toContain(
+    'Choose the repository credential reference',
+  );
+  expect(calls).toHaveLength(0);
+});
+it('requires fresh publication consent after a rejected exact candidate', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'awaiting-publication';
+  postStatus = 409;
+  await render();
+  await consent();
+  await click('Create draft PR');
+  expect(button('Retry original decision').disabled).toBe(true);
+  await click('Review a fresh decision');
+  expect(button('Create draft PR').disabled).toBe(true);
+  expect(calls).toHaveLength(1);
+});
+
+it('keeps historical work readable but requires withdrawing and releasing the retained plan again', async () => {
+  await render();
+  expect(container.textContent).toContain(
+    'Release this plan again to use the updated workflow',
+  );
+  expect(container.textContent).toContain('withdraw the historical release');
+  expect(container.textContent).not.toContain('Start checks and review');
+  expect(container.querySelector('input[type=checkbox]')).toBeNull();
+  expect(calls).toHaveLength(0);
+});
+
+function publicationPreview() {
+  return {
+    pipelineId: 'delivery-demo',
+    expectedVersion: current?.pipeline.version ?? 4,
+    revision: current?.pipeline.revision ?? deliveryPreview().revision,
+    evidenceFingerprint: 'a'.repeat(64),
+    configFingerprint: 'f'.repeat(64),
+    target: deliveryPreview().target,
+    publish: 'draft-pr-only',
+    feedbackRepairs: true,
+    merge: false,
+    deploy: false,
+  };
+}
+it('blocks publication when immutable reviewed changes are unavailable or bound to another candidate', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'awaiting-publication';
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) =>
+    String(input).endsWith('/reviewed-diff')
+      ? response({
+          pipelineId: 'delivery-demo',
+          revision: { ...current!.pipeline.revision, treeSha: '9'.repeat(40) },
+          evidenceFingerprint: 'a'.repeat(64),
+          diff: '',
+          unavailableReason: null,
+        })
+      : original(input, init),
+  );
+  await render();
+  expect(button('Create draft PR').disabled).toBe(true);
+  expect(container.textContent).toContain('does not match this candidate');
+  vi.mocked(fetch).mockImplementation(async (input, init) =>
+    String(input).endsWith('/reviewed-diff')
+      ? response({
+          pipelineId: 'delivery-demo',
+          revision: current!.pipeline.revision,
+          evidenceFingerprint: 'a'.repeat(64),
+          diff: null,
+          unavailableReason: 'The retained diff exceeds the display limit.',
+        })
+      : original(input, init),
+  );
+  await click('Reload publication readiness');
+  expect(button('Create draft PR').disabled).toBe(true);
+  expect(container.textContent).toContain('exceeds the display limit');
+  expect(calls).toHaveLength(0);
+});
+it('shows the immutable clean reviewed diff before GitHub publication setup exists', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'awaiting-publication';
+  publicationBlocked = true;
+  await render();
+  expect(
+    container.querySelector('[aria-label="Immutable reviewed changes"]'),
+  ).not.toBeNull();
+  expect(container.textContent).not.toContain('does not match this candidate');
+  expect(container.textContent).toContain('Independent checks: passed');
+  expect(
+    container.querySelector('[aria-label="Publication setup"]'),
+  ).not.toBeNull();
+  expect(
+    [...container.querySelectorAll('button')].some(
+      (button) => button.textContent === 'Create draft PR',
+    ),
+  ).toBe(false);
+  expect(calls).toHaveLength(0);
+});
+it('shows current failed independent review beside its immutable candidate diff', async () => {
+  current = deliveryDetail('intervention');
+  current.pipeline.evidence[1].result = 'failed';
+  await render();
+  expect(container.textContent).toContain('Fresh read-only review: failed');
+  expect(
+    container.querySelectorAll('[aria-label="Immutable reviewed changes"]'),
+  ).toHaveLength(1);
+  expect(container.querySelector('[aria-label="Create draft PR"]')).toBeNull();
+  expect(calls).toHaveLength(0);
+});
+it('keeps every quoted filename change inspectable through a lossless raw diff fallback', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'awaiting-publication';
+  const patch =
+    'diff --git "a/café.txt" "b/café.txt"\n--- "a/café.txt"\n+++ "b/café.txt"\n@@ -1 +1 @@\n-before\n+after\n\ndiff --git a/plain.txt b/plain.txt\n--- a/plain.txt\n+++ b/plain.txt\n@@ -1 +1 @@\n-old\n+new\n';
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) =>
+    String(input).endsWith('/reviewed-diff')
+      ? response({
+          pipelineId: 'delivery-demo',
+          revision: current!.pipeline.revision,
+          evidenceFingerprint: 'a'.repeat(64),
+          diff: patch,
+          unavailableReason: null,
+        })
+      : original(input, init),
+  );
+  await render();
+  expect(
+    container.querySelector('[aria-label="Complete reviewed diff"]')
+      ?.textContent,
+  ).toBe(patch);
+  expect(container.textContent).not.toContain(
+    'No changes in the retained reviewed diff',
+  );
+  await consent();
+  expect(button('Create draft PR').disabled).toBe(false);
 });

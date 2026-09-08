@@ -1,3 +1,4 @@
+import { approveTestPublication } from './publication.test-helper';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -74,6 +75,7 @@ beforeEach(() => {
       repoId: 'repo',
       initialRevision: revision,
       authorization: {
+        mode: 'local-validation',
         id: 'grant',
         authorizedBy: 'human',
         authorizedAt: '2026-09-06T00:00:00.000Z',
@@ -138,6 +140,7 @@ beforeEach(() => {
       executionMs: 5,
     });
   }
+  approveTestPublication(current(), paths);
   change({ type: 'plan-effect', id: 'commit', kind: 'commit' });
   change({ type: 'start-effect', id: 'commit' });
   change({

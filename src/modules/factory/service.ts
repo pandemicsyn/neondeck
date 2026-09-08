@@ -1,3 +1,5 @@
+import { factoryValidationPolicy } from './validation-policy';
+import { isDeepStrictEqual } from 'node:util';
 import { fenceInvalidFactoryCoding } from './coding-invalidation';
 import { publishFactoryChange } from './events';
 import { createHash, randomUUID } from 'node:crypto';
@@ -31,15 +33,8 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 
-export class FactoryError extends Error {
-  constructor(
-    public status: 400 | 403 | 404 | 409,
-    message: string,
-    public current?: FactoryDetail,
-  ) {
-    super(message);
-  }
-}
+export { FactoryError } from './error';
+import { FactoryError } from './error';
 export type FactoryActor = { kind: 'human'; id: string };
 type RevisionActor = FactoryActor | { kind: 'model' | 'source'; id: string };
 const digest = (value: unknown) =>
@@ -469,6 +464,7 @@ export function releaseFactoryWork(
     );
     if (previous) {
       if (
+        !isDeepStrictEqual(previous.validationPolicy, data.validationPolicy) ||
         previous.specVersion !== data.specVersion ||
         previous.specHash !== data.specHash ||
         previous.sourceVersion !== data.sourceVersion ||
@@ -495,6 +491,18 @@ export function releaseFactoryWork(
         'Coding configuration changed or selection was not reviewed. Reload coding settings before releasing.',
         current,
       );
+    if (
+      data.validationPolicy &&
+      !isDeepStrictEqual(
+        data.validationPolicy,
+        factoryValidationPolicy(current.work.repoId!, paths),
+      )
+    )
+      throw new FactoryError(
+        409,
+        'Validation settings changed. Refresh the validation policy before releasing.',
+        current,
+      );
     const revision = current.revisions.at(-1)!;
     if (
       revision.version !== data.specVersion ||
@@ -512,7 +520,9 @@ export function releaseFactoryWork(
     const active = current.releases.find((r) => !r.withdrawnAt);
     if (
       active &&
-      active.codingConfigFingerprint !== data.expectedCodingConfigFingerprint
+      (active.codingConfigFingerprint !==
+        data.expectedCodingConfigFingerprint ||
+        !isDeepStrictEqual(active.validationPolicy, data.validationPolicy))
     )
       throw new FactoryError(
         409,
@@ -531,6 +541,9 @@ export function releaseFactoryWork(
       repoId: current.work.repoId!,
       repoFingerprint: current.repoFingerprint!,
       policy: factoryPolicy,
+      ...(data.validationPolicy
+        ? { validationPolicy: data.validationPolicy }
+        : {}),
       codingConfigFingerprint,
       createdAt: new Date().toISOString(),
       withdrawnAt: null,

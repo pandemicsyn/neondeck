@@ -8,6 +8,8 @@ import {
   sameDeliveryRevision,
   sameScope,
   currentPasses,
+  assertPublicationAuthorized,
+  publicationEvidenceFingerprint,
   spentExecution,
   unresolvedEffects,
 } from './delivery-aggregate';
@@ -20,6 +22,26 @@ export function applyDeliveryCommand(
   assertPublicationOwnership: () => void,
 ): boolean {
   switch (a.type) {
+    case 'authorize-publication': {
+      available(r);
+      if (r.authorization.mode !== 'local-validation')
+        throw new Error('Legacy authority cannot be replaced.');
+      if (r.publication) {
+        if (!isDeepStrictEqual(r.publication, a.grant))
+          throw new Error('Conflicting publication replay');
+        return false;
+      }
+      currentPasses(r);
+      if (
+        unresolvedEffects(r) ||
+        !sameDeliveryRevision(a.grant.revision, r.revision) ||
+        a.grant.evidenceFingerprint !== publicationEvidenceFingerprint(r) ||
+        !isDeepStrictEqual(a.grant.target, r.authorization.target)
+      )
+        throw new Error('Publication evidence or target changed');
+      r.publication = a.grant;
+      break;
+    }
     case 'bind-effect-receipt': {
       const effect = r.effects.find((e) => e.id === a.id);
       if (!effect || effect.state !== 'in-flight' || effect.receiptRef !== null)
@@ -180,8 +202,10 @@ export function applyDeliveryCommand(
     }
     case 'plan-effect': {
       available(r);
-      if (['commit', 'push', 'create-pr', 'update-pr'].includes(a.kind))
+      if (['commit', 'push', 'create-pr', 'update-pr'].includes(a.kind)) {
         currentPasses(r);
+        assertPublicationAuthorized(r);
+      }
       const prior = r.effects.find((x) => x.id === a.id);
       if (prior) {
         if (
@@ -235,8 +259,10 @@ export function applyDeliveryCommand(
         ['commit', 'push', 'create-pr', 'update-pr'].includes(
           r.effects.find((x) => x.id === a.id)?.kind ?? '',
         )
-      )
+      ) {
         currentPasses(r);
+        assertPublicationAuthorized(r);
+      }
       const effect = r.effects.find((x) => x.id === a.id);
       if (
         !effect ||

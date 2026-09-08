@@ -1,3 +1,4 @@
+import { resolvePublicationContext } from './publication-context';
 import { terminalPrObservation } from './terminal-observation';
 import { recoverEffectNonadmission } from './publication-nonadmission';
 import { readFileSync } from 'node:fs';
@@ -57,6 +58,16 @@ function readIntent(
   );
 }
 function readConnection(p: DeliveryPipeline, paths: RuntimePaths) {
+  if (p.authorization.mode === 'local-validation') {
+    const context = resolvePublicationContext(p.repoId, paths);
+    if (
+      JSON.stringify(context.target) !== JSON.stringify(p.publication?.target)
+    )
+      throw new Error(
+        'Known publication target changed during reconciliation.',
+      );
+    return context.connection;
+  }
   const config = readRuntimeJsonSync(paths.config, parseAppConfig);
   const matches = (config.factory?.github ?? []).filter(
     (c) =>

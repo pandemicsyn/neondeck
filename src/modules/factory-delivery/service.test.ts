@@ -1,3 +1,4 @@
+import { approveTestPublication } from './publication.test-helper';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -32,6 +33,7 @@ const reservation: DeliveryReservation = {
   repoId: 'repo',
   initialRevision: revision,
   authorization: {
+    mode: 'local-validation',
     id: 'human-grant',
     authorizedBy: 'human',
     authorizedAt: '2026-09-06T00:00:00.000Z',
@@ -105,7 +107,7 @@ it('delivers one draft only after durable independent evidence and commit/tree b
   const p = reserveDeliveryPipeline(reservation, paths),
     io = fakeIO();
   for (let i = 0; i < 7; i++)
-    await advanceFactoryDelivery(p.pipelineId, paths, io);
+    await advanceWithPublication(p.pipelineId, paths, io);
   const actual = getDeliveryPipeline(p.pipelineId, paths)!;
   expect(actual.pr?.number).toBe(7);
   expect(actual.evidence.map((e) => e.kind)).toEqual([
@@ -130,7 +132,7 @@ it('claims before IO and keeps a lost POST uncertain without another POST', asyn
     throw new Error('response lost');
   });
   for (let i = 0; i < 8; i++)
-    await advanceFactoryDelivery(p.pipelineId, paths, io);
+    await advanceWithPublication(p.pipelineId, paths, io);
   expect(io.createPr).toHaveBeenCalledTimes(1);
   expect(getDeliveryPipeline(p.pipelineId, paths)!.effects.at(-1)!.state).toBe(
     'uncertain',
@@ -148,12 +150,12 @@ it('revocation between durable admission and IO fences checks and retains the cl
       throw new Error('revoked');
     }
   });
-  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  await advanceWithPublication(p.pipelineId, paths, io);
   expect(io.verify).not.toHaveBeenCalled();
   expect(getDeliveryPipeline(p.pipelineId, paths)!.effects.at(-1)!.state).toBe(
     'planned',
   );
-  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  await advanceWithPublication(p.pipelineId, paths, io);
   expect(io.cancel).toHaveBeenCalled();
 });
 it('concurrent controller calls share a local promise while durable claim prevents duplicate admission', async () => {
@@ -186,6 +188,7 @@ it('visits pages beyond100 and isolates one authority failure', async () => {
         ...reservation,
         initialRevision: rev,
         authorization: {
+          mode: 'local-validation',
           ...reservation.authorization,
           id: `grant-${i}`,
           revision: rev,
@@ -226,7 +229,7 @@ it('retains a legal oversized full findings report and durably asks for human pl
     details,
   }));
   for (let i = 0; i < 4; i++)
-    await advanceFactoryDelivery(p.pipelineId, paths, io);
+    await advanceWithPublication(p.pipelineId, paths, io);
   const actual = getDeliveryPipeline(p.pipelineId, paths)!;
   expect(actual.interventions.at(-1)).toMatchObject({
     kind: 'scope',
@@ -247,10 +250,10 @@ it.each(['scope', 'budget'] as const)(
     const p = reserveDeliveryPipeline(reservation, paths),
       io = fakeIO();
     for (let i = 0; i < 6; i++)
-      await advanceFactoryDelivery(p.pipelineId, paths, io);
+      await advanceWithPublication(p.pipelineId, paths, io);
     interveneDelivery(p.pipelineId, kind, 'Human planning needed', paths);
     vi.mocked(io.assert).mockClear();
-    await advanceFactoryDelivery(p.pipelineId, paths, io);
+    await advanceWithPublication(p.pipelineId, paths, io);
     expect(io.observeOutcome).toHaveBeenCalledOnce();
     expect(io.assert).not.toHaveBeenCalled();
     expect(io.repair).not.toHaveBeenCalled();
@@ -289,30 +292,179 @@ it('records known nonadmission when post-start authority rejects before push IO 
   const p = reserveDeliveryPipeline(reservation, paths),
     io = fakeIO();
   for (let i = 0; i < 3; i++)
-    await advanceFactoryDelivery(p.pipelineId, paths, io);
+    await advanceWithPublication(p.pipelineId, paths, io);
   io.assert = vi.fn<DeliveryIO['assert']>(async (current) => {
     if (
       current.effects.some((e) => e.kind === 'push' && e.state === 'in-flight')
     )
       throw new Error('revoked before dispatch');
   });
-  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  await advanceWithPublication(p.pipelineId, paths, io);
   const paused = getDeliveryPipeline(p.pipelineId, paths)!;
   expect(io.push).not.toHaveBeenCalled();
   expect(paused.effects.at(-1)?.state).toBe('planned');
   expect(paused.interventions.at(-1)?.reason).toContain('not dispatched');
-  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  await advanceWithPublication(p.pipelineId, paths, io);
   expect(io.recover).not.toHaveBeenCalled();
 });
 it('records known nonadmission when outer push preparation rejects before an intent exists', async () => {
   const p = reserveDeliveryPipeline(reservation, paths),
     io = fakeIO();
   for (let i = 0; i < 3; i++)
-    await advanceFactoryDelivery(p.pipelineId, paths, io);
+    await advanceWithPublication(p.pipelineId, paths, io);
   // The fake commit receipt intentionally lacks a publication workspace: real IO must reject before any Git.
   io.push = deliveryIO.push;
-  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  await advanceWithPublication(p.pipelineId, paths, io);
   const paused = getDeliveryPipeline(p.pipelineId, paths)!;
   expect(paused.effects.at(-1)?.state).toBe('planned');
   expect(paused.interventions.at(-1)?.kind).toBe('scope');
 });
+
+it('local validation waits without publishing and explicit publication preserves the original budget', async () => {
+  const p = reserveDeliveryPipeline(
+    {
+      ...reservation,
+      authorization: { ...reservation.authorization, mode: 'local-validation' },
+    },
+    paths,
+  );
+  const io = fakeIO();
+  for (let i = 0; i < 5; i++)
+    await advanceFactoryDelivery(p.pipelineId, paths, io);
+  const clean = getDeliveryPipeline(p.pipelineId, paths)!;
+  expect(clean.evidence.map((e) => e.result)).toEqual(['passed', 'passed']);
+  expect(clean.effects.map((e) => e.kind)).toEqual(['verification', 'review']);
+  expect(io.commit).not.toHaveBeenCalled();
+  expect(io.push).not.toHaveBeenCalled();
+  expect(io.createPr).not.toHaveBeenCalled();
+  const { publicationEvidenceFingerprint, deliveryBudget, awaitsPublication } =
+    await import('./delivery-aggregate');
+  const { changeDelivery } = await import('./service-records');
+  expect(awaitsPublication(clean)).toBe(true);
+  expect(() =>
+    changeDelivery(
+      p.pipelineId,
+      { type: 'plan-effect', id: 'unauthorized', kind: 'commit' },
+      paths,
+    ),
+  ).toThrow(/publication authorization/);
+  const before = deliveryBudget(clean);
+  const grant = {
+    requestId: 'publish',
+    requestFingerprint: '9'.repeat(64),
+    authorizedBy: 'human',
+    authorizedAt: new Date().toISOString(),
+    revision: clean.revision,
+    evidenceFingerprint: publicationEvidenceFingerprint(clean),
+    configFingerprint: '8'.repeat(64),
+    target: clean.authorization.target,
+  };
+  const approved = changeDelivery(
+    p.pipelineId,
+    { type: 'authorize-publication', grant },
+    paths,
+  );
+  expect(deliveryBudget(approved)).toEqual(before);
+  expect(approved.authorization).toEqual(clean.authorization);
+  expect(
+    changeDelivery(
+      p.pipelineId,
+      { type: 'authorize-publication', grant },
+      paths,
+    ),
+  ).toEqual(approved);
+  expect(() =>
+    changeDelivery(
+      p.pipelineId,
+      { type: 'authorize-publication', grant: { ...grant, requestId: 'new' } },
+      paths,
+    ),
+  ).toThrow(/Conflicting publication replay/);
+  for (let i = 0; i < 5; i++)
+    await advanceFactoryDelivery(p.pipelineId, paths, io);
+  const published = getDeliveryPipeline(p.pipelineId, paths)!;
+  expect(published.pr?.number).toBe(7);
+  expect(published.publication).toEqual(grant);
+  expect(io.createPr).toHaveBeenCalledTimes(1);
+  expect(deliveryBudget(published)).toEqual(before);
+});
+it('publication grant rejects missing checks, stale candidate and altered evidence', async () => {
+  const p = reserveDeliveryPipeline(
+    {
+      ...reservation,
+      authorization: { ...reservation.authorization, mode: 'local-validation' },
+    },
+    paths,
+  );
+  const { publicationEvidenceFingerprint } =
+    await import('./delivery-aggregate');
+  const { changeDelivery } = await import('./service-records');
+  const grant = {
+    requestId: 'publish',
+    requestFingerprint: '9'.repeat(64),
+    authorizedBy: 'human',
+    authorizedAt: new Date().toISOString(),
+    revision: p.revision,
+    evidenceFingerprint: publicationEvidenceFingerprint(p),
+    configFingerprint: '8'.repeat(64),
+    target: p.authorization.target,
+  };
+  expect(() =>
+    changeDelivery(
+      p.pipelineId,
+      { type: 'authorize-publication', grant },
+      paths,
+    ),
+  ).toThrow(/independent verification/);
+  const io = fakeIO();
+  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  expect(() =>
+    changeDelivery(
+      p.pipelineId,
+      { type: 'authorize-publication', grant },
+      paths,
+    ),
+  ).toThrow(/evidence or target changed/);
+  const clean = getDeliveryPipeline(p.pipelineId, paths)!;
+  expect(() =>
+    changeDelivery(
+      p.pipelineId,
+      {
+        type: 'authorize-publication',
+        grant: {
+          ...grant,
+          evidenceFingerprint: publicationEvidenceFingerprint(clean),
+          revision: { ...clean.revision, treeSha: '0'.repeat(40) },
+        },
+      },
+      paths,
+    ),
+  ).toThrow(/evidence or target changed/);
+});
+it('retains historical pipeline history but never starts validation or publication', async () => {
+  const p = reserveDeliveryPipeline(
+    {
+      ...reservation,
+      authorization: { ...reservation.authorization, mode: undefined },
+    },
+    paths,
+  );
+  const io = fakeIO();
+  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  expect(io.verify).not.toHaveBeenCalled();
+  expect(io.commit).not.toHaveBeenCalled();
+  expect(io.repair).not.toHaveBeenCalled();
+  expect(getDeliveryPipeline(p.pipelineId, paths)).toEqual(p);
+});
+
+async function advanceWithPublication(
+  id: string,
+  paths: ReturnType<typeof runtimePaths>,
+  io: DeliveryIO,
+) {
+  const p = getDeliveryPipeline(id, paths)!;
+  const { awaitsPublication } = await import('./delivery-aggregate');
+  if (awaitsPublication(p)) approveTestPublication(p, paths);
+  return advanceFactoryDelivery(id, paths, io);
+}

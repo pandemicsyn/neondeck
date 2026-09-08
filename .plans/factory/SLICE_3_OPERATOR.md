@@ -1,16 +1,42 @@
 # Slice 3 operator flow: candidate to draft PR
 
-Status: UI implementation with synthetic verification, September 6, 2026. Live Codex/GitHub acceptance remains pending. See the [implementation contract](SLICE_3_IMPLEMENTATION_PLAN.md) and [handoff](SLICE_3_HANDOFF.md) for backend delivery and acceptance status.
+Status: updated for the single validation/publication lifecycle, September 7, 2026.
+Implementation verification is tracked in the [current lifecycle plan](VALIDATION_AND_PUBLICATION_UX.md).
+Live Codex/GitHub acceptance remains pending. The [original implementation contract](SLICE_3_IMPLEMENTATION_PLAN.md)
+and [handoff](SLICE_3_HANDOFF.md) retain earlier delivery and acceptance history.
 
-## Grant an exact candidate
+## Release the plan, then approve publication
 
-Open a factory task and its retained coding attempt. Review the retained worktree through the existing read-only diff viewer. Current worktree changes can differ from captured candidate content; the delivery preview identifies the frozen tree and candidate digest separately.
+The task header shows **Plan → Code → Validate → Approve PR → Watch PR → Done**,
+the current activity or blocker, and its next action. Completed stages can be
+expanded without losing the conversation or unsaved text.
 
-Under **Candidate delivery**, review the specification version, short candidate/tree label, target and check commands. Expand **Revision details** for the exact candidate/run/attempt, release, specification hash, frozen tree, original base/head and configuration fingerprint. Existing `publish:false` releases do not authorize publication or repairs automatically.
+Review the brief, coding settings, independent reviewer and repository checks,
+then release the plan. Coding proceeds into local checks, independent review and
+bounded in-scope repairs automatically. GitHub intake and publication setup are
+not required for validation. Existing test records without the current policy
+need a fresh release; their brief, history and retained work remain available.
 
-Select the explicit consent checkbox and choose **Grant bounded draft delivery** only when this exact preview is intended. The grant permits scoped checks, at most two repairs total and draft-PR publication. Cumulative execution is limited to three hours including initial coding, verification and review, with 45 minutes per attempt. New feedback does not replenish the allowance. Merge and deployment remain outside this authority.
+Under **Review result**, inspect checks, findings and the immutable reviewed diff.
+Current failed reviews also have an inspectable diff. The separately available
+live worktree view can differ from reviewed evidence. A clean result waits at
+**Approve PR**. Configure publication using the registered repository and an
+existing credential reference if necessary; this does not enable intake.
 
-An unconfirmed grant retains its original request and preview in browser session storage. **Retry original delivery grant** replays that exact request; it does not reset budget. A version conflict requires **Review a fresh grant**, a refreshed preview and new consent. A failed or unsupported read disables granting. Unreadable saved request storage blocks another grant until restored.
+Select explicit consent and choose **Create draft PR** for the exact reviewed
+candidate, target and remaining limits. This separate decision permits a draft PR
+and bounded feedback repairs updating that same PR. There are at most two repairs
+and three hours cumulative execution, including initial coding, checks, review
+and progress assessment. Each attempt is limited to 45 minutes or the configured
+smaller bound. Publication and new feedback do not replenish the allowance.
+Merge and deployment remain outside factory authority.
+
+An unconfirmed approval retains its original request in browser session storage.
+**Retry original decision** recovers that receipt without new authority or budget.
+A version conflict requires **Review a fresh decision** and new consent. Changed,
+missing, private or oversized reviewed content cannot be approved through an
+incomplete preview; the UI explains the reason and recovery. The immutable diff
+uses the existing 1 MiB evidence display limit.
 
 ## Follow execution and evidence
 
@@ -29,6 +55,10 @@ Use the conversation to clarify scope or determine the next bounded decision. Co
 Merged, closed, cancelled and failed outcomes are displayed distinctly. An outcome does not imply deployment success or authorize deletion. No merge or cleanup button is introduced; protected retained-work cleanup depends on the backend's supported operator flow and evidence policy.
 
 ## Verification coverage
+
+The counts and flows below describe the original Slice 3 checkpoint. Current
+single-lifecycle regression results and remaining acceptance are recorded in the
+[lifecycle plan](VALIDATION_AND_PUBLICATION_UX.md).
 
 Focused UI tests cover exact consent, immutable grant replay, conflicts, canonical API parsing, stale controls, authoritative budgets, current and prior evidence, readable external feedback, explicit planning transfer, PR review routing and revocation gating.
 

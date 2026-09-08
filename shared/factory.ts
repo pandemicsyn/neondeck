@@ -1,4 +1,5 @@
 import { linearConnectionSchema } from './factory-linear';
+import { validationPolicySchema } from './factory-delivery';
 import * as v from 'valibot';
 import { factoryCodingConfigSchema } from './factory-coding';
 import { githubConnectionSchema } from './factory-github';
@@ -31,6 +32,21 @@ export const factoryConfigSchema = v.strictObject({
       ),
     ),
     [],
+  ),
+  publication: v.optional(
+    v.pipe(
+      v.array(
+        v.strictObject({
+          repoId: label,
+          repositoryId: githubConnectionSchema.entries.repositoryId,
+          tokenEnv: githubConnectionSchema.entries.tokenEnv,
+        }),
+      ),
+      v.maxLength(20),
+      v.check(
+        (items) => new Set(items.map((i) => i.repoId)).size === items.length,
+      ),
+    ),
   ),
   coding: v.optional(factoryCodingConfigSchema, {}),
   codingPolicy: v.optional(v.literal('isolated-local-v1'), 'isolated-local-v1'),
@@ -191,6 +207,7 @@ export const releaseSchema = v.strictObject({
   sourceVersion: version,
   repoId: label,
   repoFingerprint: hash,
+  validationPolicy: v.optional(validationPolicySchema),
   codingConfigFingerprint: v.optional(v.nullable(hash), null),
   policy: v.strictObject({
     version: v.literal('isolated-local-v1'),
@@ -219,6 +236,7 @@ export const releaseInputSchema = v.strictObject({
   repoFingerprint: hash,
   policyVersion: v.literal('isolated-local-v1'),
   expectedCodingConfigFingerprint: hash,
+  validationPolicy: validationPolicySchema,
 });
 export const transitionSchema = v.strictObject({
   expectedVersion: version,

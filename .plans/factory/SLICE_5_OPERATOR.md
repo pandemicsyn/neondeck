@@ -108,7 +108,9 @@ target creates a fresh intent when needed, including A→B→A transitions; an u
 target does not repeatedly send a completed update. Dispatched uncertain updates
 remain subject to reconciliation.
 
-Intake capacity applies to 5,000 pending deliveries. Completed and attention
+Intake capacity applies to 5,000 pending non-removal deliveries. Authenticated
+removals are exempt so provider outages cannot block local authority revocation;
+pending removals have no separate hard cap and drain in batches of 25 per connection. Completed and attention
 deliveries share a bounded 10,000-entry history. Removed, disabled and stale
 connection bindings move to that review history locally, allowing unrelated intake
 to recover even during a credential outage.
@@ -118,9 +120,10 @@ the mutation. An exact match can establish the receipt; a mismatch remains visib
 for operator review. Configuration changes and new briefs do not retroactively
 prove that an older status mutation succeeded.
 
-Linear intake does not create a Linear-specific coding or PR publisher. Draft
-GitHub delivery still requires the existing delivery grant and exactly one
-enabled GitHub delivery connection matching the registered repository.
+Linear intake reuses the shared coding, candidate validation and GitHub
+publication flow. Publication requires separate human approval and an enabled
+publication connection matching the registered repository; see the
+[delivery operator guide](SLICE_3_OPERATOR.md).
 
 ## Acceptance status
 

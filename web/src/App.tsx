@@ -454,7 +454,14 @@ function DashboardPanel({
   region: DashboardRegion;
   rowOffset: number;
 }) {
-  const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
+  const requestedPanel = new URLSearchParams(window.location.search).get(
+    'panel',
+  );
+  const initialTabId =
+    region.tabs.find((tab) => tab.pluginId === requestedPanel)?.id ??
+    region.defaultTab ??
+    region.tabs[0]?.id ??
+    '';
   const [activeTabId, setActiveTabId] = useState(initialTabId);
   const [focusPulse, setFocusPulse] = useState(false);
   const focusPulseTimeoutRef = useRef<number | null>(null);

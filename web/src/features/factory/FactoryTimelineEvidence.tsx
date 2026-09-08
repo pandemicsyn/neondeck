@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 /* Bounded evidence supports keyboard scrolling. */
 /* oxlint-disable jsx-a11y/no-noninteractive-tabindex */
 import { useState } from 'react';
@@ -15,6 +16,7 @@ export function FactoryTimelineEvidence({
 }: {
   entry: FactoryTimelineEntry;
 }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const [open, setOpen] = useState(false);
   const { deliveryId, runId } = entry.correlation;
   // The timeline producer retains reservations separately from settled results.
@@ -56,8 +58,8 @@ export function FactoryTimelineEvidence({
             <p role="alert">
               {evidence.error.message}{' '}
               <button
-                disabled={evidence.isFetching}
-                onClick={() => void evidence.refetch()}
+                disabled={evidence.isPending || refreshing}
+                onClick={() => void refresh(() => evidence.refetch())}
               >
                 Retry evidence
               </button>

@@ -1,3 +1,4 @@
+import { currentValidation, sameCandidate } from './FactoryLifecycle';
 import { triggeringDeliveryFeedback } from './FactoryDeliveryPlanningEvidence';
 import { FactoryDeliveryEvidenceContent } from './FactoryDeliveryEvidenceContent';
 import type { DeliveryDetail } from '../../api/factory-delivery';
@@ -75,13 +76,16 @@ export function FactoryDeliveryEvidence({
           confirmed running.
         </p>
       )}
-      <ul>
-        {p.authorization.checkCommands.map((command) => (
-          <li key={command}>
-            <code>{command}</code>
-          </li>
-        ))}
-      </ul>
+      <details>
+        <summary>Configured check commands</summary>
+        <ul>
+          {p.authorization.checkCommands.map((command) => (
+            <li key={command}>
+              <code>{command}</code>
+            </li>
+          ))}
+        </ul>
+      </details>
       {p.feedback
         .filter((item) => item.id !== triggeringDeliveryFeedback(detail)?.id)
         .map((item) => (
@@ -95,22 +99,15 @@ export function FactoryDeliveryEvidence({
         ))}
       {(['verification', 'review'] as const).map((kind) => {
         const records = p.evidence.filter((e) => e.kind === kind);
-        const verification = p.evidence
-          .filter(
-            (e) =>
-              e.kind === 'verification' &&
-              JSON.stringify(e.revision) === JSON.stringify(p.revision),
-          )
-          .at(-1);
-        const current = records.filter(
-          (e) =>
-            JSON.stringify(e.revision) === JSON.stringify(p.revision) &&
-            (kind === 'verification' ||
-              (verification &&
-                e.verificationEvidenceId === verification.id &&
-                e.verificationBundleDigest === verification.bundleDigest &&
-                e.validationContractDigest ===
-                  verification.validationContractDigest)),
+        const validation = currentValidation(detail);
+        const latest =
+          kind === 'verification' ? validation.checks : validation.review;
+        const current = latest ? [latest] : [];
+        const running = p.effects.some(
+          (effect) =>
+            effect.kind === kind &&
+            effect.state === 'in-flight' &&
+            sameCandidate(effect.revision, p.revision),
         );
         return (
           <div key={kind} className="factory-delivery-evidence-row">
@@ -118,13 +115,23 @@ export function FactoryDeliveryEvidence({
               {kind === 'verification'
                 ? 'Independent checks'
                 : 'Fresh read-only review'}
-              : {current.at(-1)?.result ?? 'Pending, no current evidence'}
+              :{' '}
+              {running
+                ? kind === 'review'
+                  ? 'Reviewing'
+                  : 'Running checks'
+                : (current.at(-1)?.result ?? 'Not started for this candidate')}
             </strong>
             {records.map((e) => (
               <FactoryDeliveryEvidenceContent
                 key={e.id}
                 deliveryId={p.pipelineId}
                 evidence={e}
+                initiallyOpen={
+                  kind === 'review' &&
+                  current.includes(e) &&
+                  e.result !== 'passed'
+                }
                 version={p.version}
                 label={`${e.result} · ${current.includes(e) ? 'Current tree' : 'Prior or unmatched evidence, not current certification'}`}
               />
@@ -132,17 +139,26 @@ export function FactoryDeliveryEvidence({
           </div>
         );
       })}
-      {p.effects.map((effect) => (
-        <p key={effect.id}>
-          {effect.kind}: <strong>{effect.state}</strong>
-          {effect.receiptRef && (
-            <>
-              {' '}
-              · <code>{effect.receiptRef}</code>
-            </>
-          )}
+      <details>
+        <summary>Operation receipts</summary>
+        {p.effects.map((effect) => (
+          <p key={effect.id}>
+            {effect.kind}: <strong>{effect.state}</strong>
+            {effect.receiptRef && (
+              <>
+                {' '}
+                · <code>{effect.receiptRef}</code>
+              </>
+            )}
+          </p>
+        ))}
+      </details>
+      {p.repairs.length > 0 && (
+        <p>
+          Each repaired candidate needs its own checks and independent review.
+          Earlier evidence does not certify the current changes.
         </p>
-      ))}
+      )}
       {p.repairs.map((repair, index) => (
         <p key={repair.runId}>
           Repair {index + 1}: {repair.status} · {repair.reason}

@@ -30,6 +30,7 @@ import {
   frozenCodingConfig,
   codingDigest,
   releaseFactoryWork,
+  factoryValidationPolicy,
   saveFactorySpec,
   submitFactoryWork,
 } from '../factory';
@@ -130,6 +131,8 @@ else {
         paths.config,
         JSON.stringify({
           version: 1,
+          models: { prReview: 'faux/faux-1', prReviewThinkingLevel: 'off' },
+          guardrails: { requiredChecks: ['npm test'] },
           factory: {
             enabled: true,
             coding: {
@@ -197,6 +200,7 @@ else {
         detail.work.id,
         {
           requestKey: 'release-real-host',
+          validationPolicy: factoryValidationPolicy('demo', paths),
           expectedVersion: detail.work.version,
           specVersion: detail.work.specVersion,
           specHash,
@@ -233,6 +237,7 @@ else {
           repoId: parent.snapshot.repoId,
           initialRevision: revision,
           authorization: {
+            mode: 'local-validation',
             id: 'explicit-grant',
             authorizedBy: 'operator',
             authorizedAt: new Date().toISOString(),

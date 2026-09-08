@@ -1,4 +1,6 @@
 import { FactoryLinearSetup } from './FactoryLinearSetup';
+import { getFactoryDeliveryState } from '../../api/factory-delivery';
+import { factoryInboxPhase } from './FactoryLifecycle';
 import { FactoryOperations } from './FactoryOperations';
 import { FactoryCodingSetup } from './FactoryCodingSetup';
 import { FactoryGitHubSetup } from './FactoryGitHub';
@@ -59,6 +61,11 @@ export function FactoryPage() {
       }),
     [client],
   );
+  const deliveries = useQuery({
+    queryKey: ['factory-delivery-state'],
+    queryFn: ({ signal }) => getFactoryDeliveryState({ signal }),
+    enabled: !!state.data?.enabled,
+  });
   const selected = useQuery({
     queryKey: ['factory-detail', id],
     queryFn: () => getFactoryDetail(id!),
@@ -130,7 +137,10 @@ export function FactoryPage() {
         </a>
         <button
           disabled={
-            busy || refreshing || state.isFetching || selected.isFetching
+            busy ||
+            refreshing ||
+            state.isPending ||
+            (!!id && selected.isPending)
           }
           onClick={async () => {
             setRefreshing(true);
@@ -219,9 +229,12 @@ export function FactoryPage() {
                     >
                       <strong>{item.title}</strong>
                       <span>
-                        {item.lifecycle === 'queued'
-                          ? 'Released · review eligibility in detail'
-                          : item.lifecycle}{' '}
+                        {factoryInboxPhase(
+                          item,
+                          selected.data,
+                          deliveries.data?.deliveries ?? [],
+                          !!deliveries.error,
+                        )}{' '}
                         · {item.repoId ?? 'Repo needed'}
                       </span>
                     </button>

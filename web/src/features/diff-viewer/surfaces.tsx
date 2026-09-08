@@ -47,9 +47,11 @@ export function PreparedDiffReview({
   diff,
   externalRefreshGuard,
   readOnly = false,
+  context,
 }: {
   diff: PreparedDiffRecord;
   readOnly?: boolean;
+  context?: 'factory';
   externalRefreshGuard?: {
     mutationPending?: boolean;
     revisionConfirmationOpen?: boolean;
@@ -307,7 +309,7 @@ export function PreparedDiffReview({
         title={diff.title}
         tone="primary"
       />
-      {readOnly && (
+      {readOnly && context !== 'factory' && (
         <details className="prepared-readonly-findings">
           <summary>Local review findings</summary>
           {findingReview.inspector}

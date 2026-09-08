@@ -6,21 +6,30 @@ import type { RuntimePaths } from '../../runtime-home';
 import { FactoryError } from '../../modules/factory';
 import {
   factoryDeliveryState,
-  factoryDeliveryPreview,
   factoryDeliveryDetail,
-  authorizeFactoryDelivery,
   revokeFactoryDelivery,
   factoryDeliveryList,
   reconcileFactoryDelivery,
   readDeliveryEvidence,
+  readReviewedDeliveryDiff,
+  factoryValidationPolicy,
+  retryReleasedValidation,
+  factoryPublicationReadiness,
+  authorizeFactoryPublication,
+  setupFactoryPublication,
 } from '../../modules/factory-delivery';
 
 const services = {
   readDeliveryEvidence,
+  readReviewedDeliveryDiff,
+  factoryValidationPolicy,
+  retryReleasedValidation,
+  factoryPublicationReadiness,
+  authorizeFactoryPublication,
+  setupFactoryPublication,
+
   factoryDeliveryState,
-  factoryDeliveryPreview,
   factoryDeliveryDetail,
-  authorizeFactoryDelivery,
   revokeFactoryDelivery,
   factoryDeliveryList,
   reconcileFactoryDelivery,
@@ -46,9 +55,6 @@ export function createFactoryDeliveryRoutes(
     );
   });
   routes.get('/state', (c) => c.json(io.factoryDeliveryState(paths)));
-  routes.get('/candidates/:runId', async (c) =>
-    c.json(await io.factoryDeliveryPreview(c.req.param('runId'), paths)),
-  );
   routes.get('/deliveries', (c) =>
     c.json(
       io.factoryDeliveryList(
@@ -77,9 +83,6 @@ export function createFactoryDeliveryRoutes(
       ),
     ),
   );
-  routes.post('/grants', async (c) =>
-    c.json(await io.authorizeFactoryDelivery(await c.req.json(), paths)),
-  );
   routes.post('/deliveries/:id/revoke', async (c) =>
     c.json(
       await io.revokeFactoryDelivery(
@@ -97,6 +100,42 @@ export function createFactoryDeliveryRoutes(
         paths,
       ),
     ),
+  );
+  routes.get('/validation-policy/:repoId', (c) =>
+    c.json(io.factoryValidationPolicy(c.req.param('repoId'), paths)),
+  );
+  routes.post('/candidates/:runId/validation/retry', async (c) =>
+    c.json(
+      await io.retryReleasedValidation(
+        c.req.param('runId'),
+        await c.req.json(),
+        paths,
+      ),
+    ),
+  );
+  routes.get('/deliveries/:id/publication', async (c) =>
+    c.json(await io.factoryPublicationReadiness(c.req.param('id'), paths)),
+  );
+  routes.post('/deliveries/:id/publication-grants', async (c) =>
+    c.json(
+      await io.authorizeFactoryPublication(
+        c.req.param('id'),
+        await c.req.json(),
+        paths,
+      ),
+    ),
+  );
+  routes.post('/publication-setup/:repoId', async (c) =>
+    c.json(
+      await io.setupFactoryPublication(
+        c.req.param('repoId'),
+        await c.req.json(),
+        paths,
+      ),
+    ),
+  );
+  routes.get('/deliveries/:id/reviewed-diff', async (c) =>
+    c.json(await io.readReviewedDeliveryDiff(c.req.param('id'), paths)),
   );
   return routes;
 }

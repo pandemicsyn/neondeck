@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import {
-  githubConnectionSchema,
-  type GitHubConnection,
+  githubRepositoryIdentitySchema,
+  type GitHubRepositoryIdentity,
 } from '../../../shared/factory-github';
 import { githubFetch } from './client';
 
@@ -94,10 +94,19 @@ export type FactoryPullLookup =
   | { status: 'absent'; pages: number }
   | { status: 'incomplete'; candidate: FactoryPull | null; pages: number };
 
-function context(connection: GitHubConnection) {
-  const value = v.parse(githubConnectionSchema, connection);
+function context(connection: GitHubRepositoryIdentity) {
+  return repositoryContext(v.parse(githubRepositoryIdentitySchema, connection));
+}
+function repositoryContext(
+  connection: Pick<GitHubRepositoryIdentity, 'owner' | 'name' | 'tokenEnv'>,
+) {
+  const value = v.parse(
+    v.omit(githubRepositoryIdentitySchema, ['repositoryId']),
+    connection,
+  );
   const token = process.env[value.tokenEnv];
-  if (!token) throw new Error('Factory GitHub token is not configured.');
+  if (!token?.trim())
+    throw new Error('Factory GitHub token is not configured.');
   return {
     token,
     url: `https://api.github.com/repos/${encodeURIComponent(value.owner)}/${encodeURIComponent(value.name)}`,
@@ -134,7 +143,7 @@ async function json(response: Response): Promise<unknown> {
     void reader.cancel().catch(() => undefined);
   }
 }
-function matchesRepo(pull: FactoryPull, connection: GitHubConnection) {
+function matchesRepo(pull: FactoryPull, connection: GitHubRepositoryIdentity) {
   return [pull.head.repo, pull.base.repo].every(
     (repo) =>
       String(repo.id) === connection.repositoryId &&
@@ -144,7 +153,7 @@ function matchesRepo(pull: FactoryPull, connection: GitHubConnection) {
 }
 function assertIdentity(
   pull: FactoryPull,
-  connection: GitHubConnection,
+  connection: GitHubRepositoryIdentity,
   identity: FactoryPullIdentity,
 ) {
   const markers = pull.body?.match(/<!--\s*neon-factory-pr:[\s\S]*?-->/g) ?? [];
@@ -186,7 +195,7 @@ function maxPages(options: FactoryPullReadOptions) {
  * interpret absent alone as permission to retry an uncertain write.
  */
 export async function lookupFactoryGitHubPull(
-  connection: GitHubConnection,
+  connection: GitHubRepositoryIdentity,
   input: FactoryPullIdentity,
   options: FactoryPullReadOptions = {},
 ): Promise<FactoryPullLookup> {
@@ -232,7 +241,7 @@ export async function lookupFactoryGitHubPull(
  * the caller to reconcile. This function does not perform effects orchestration.
  */
 export async function createFactoryGitHubDraftPull(
-  connection: GitHubConnection,
+  connection: GitHubRepositoryIdentity,
   input: v.InferOutput<typeof factoryPullCreateSchema>,
   signal?: AbortSignal,
 ): Promise<FactoryPull> {
@@ -267,7 +276,7 @@ export async function createFactoryGitHubDraftPull(
   return pull;
 }
 export async function readFactoryGitHubPull(
-  connection: GitHubConnection,
+  connection: GitHubRepositoryIdentity,
   number: number,
   input: FactoryPullIdentity,
   options: FactoryPullReadOptions = {},
@@ -355,7 +364,7 @@ export const factoryPullInlineCommentSchema = v.object({
  * older commits. Each collection explicitly reports whether its scan completed.
  */
 export async function observeFactoryGitHubPull(
-  connection: GitHubConnection,
+  connection: GitHubRepositoryIdentity,
   number: number,
   identity: FactoryPullIdentity,
   options: FactoryPullReadOptions = {},
@@ -489,4 +498,23 @@ export async function observeFactoryGitHubPull(
       (collection) => collection.complete,
     ),
   };
+}
+
+/** Uses the managed credential-scoped conditional GET cache, validating even 304 bodies. */
+export async function resolveFactoryGitHubRepository(
+  input: Pick<GitHubRepositoryIdentity, 'owner' | 'name' | 'tokenEnv'>,
+  options: FactoryPullReadOptions = {},
+): Promise<GitHubRepositoryIdentity> {
+  const value = v.parse(
+    v.omit(githubRepositoryIdentitySchema, ['repositoryId']),
+    input,
+  );
+  const { token, url } = repositoryContext(value);
+  const response = await githubFetch(token, url, readOptions(options));
+  const metadata = v.parse(repository, await json(response));
+  if (metadata.owner.login !== value.owner || metadata.name !== value.name)
+    throw new Error(
+      'Factory GitHub repository mapping does not match the registered target.',
+    );
+  return { ...value, repositoryId: String(metadata.id) };
 }

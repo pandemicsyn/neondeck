@@ -1,3 +1,4 @@
+import { approveTestPublication } from './publication.test-helper';
 import * as v from 'valibot';
 import {
   candidateCheckLogSchema,
@@ -104,6 +105,7 @@ beforeEach(() => {
       repoId: 'repo',
       initialRevision: revision,
       authorization: {
+        mode: 'local-validation',
         id: 'grant',
         authorizedBy: 'operator',
         authorizedAt: '2026-09-06T00:00:00.000Z',
@@ -452,6 +454,7 @@ function feedbackEvidence(
     totalTokens: 20,
     durationMs: 5,
   });
+  p = approveTestPublication(p, paths);
   update({ type: 'plan-effect', id: 'commit', kind: 'commit' });
   update({ type: 'start-effect', id: 'commit' });
   update({

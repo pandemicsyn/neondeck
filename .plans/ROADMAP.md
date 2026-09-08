@@ -245,6 +245,20 @@ acceptance or start Linear intake/remote execution.
 
 ## Software Factory Onboarding And Observability — Source Complete
 
+Active operator-approved correction: [validation and publication lifecycle](factory/VALIDATION_AND_PUBLICATION_UX.md).
+New plan approval includes automatic local validation and bounded repairs; draft-PR
+publication becomes a separate explicit decision. Maintain one lifecycle; existing
+test releases may require fresh approval, with their history and work retained.
+Backend and phase-oriented UI source, both independent static reviews and full
+local verification are complete. Published as PR #430 above #429 (stack #431),
+with final manager architecture review complete. Live acceptance and the
+documented preview/history deferrals remain open.
+
+Operator follow-up: [background refresh stability](factory/BACKGROUND_REFRESH.md)
+separates quiet query revalidation from user action/loading feedback. Implementation
+and independent static reviews are complete; backend authority gates remain unchanged.
+Live operator acceptance and the separately documented delivery lifecycle UX follow-up remain open.
+
 Operator correction: [coding repository skills](factory/CODING_REPO_SKILLS.md)
 removes automatic global runtime skill injection from new coding contexts and
 relies on native CLI discovery. Source, independent reviews and full verification

@@ -66,6 +66,7 @@ it('explains disabled mode, then enables real typed intake config', async () => 
           enabled,
           github: [],
           linear: [],
+          publication: [],
           codingPolicy: 'isolated-local-v1',
           coding: v.parse(factoryCodingConfigSchema, {}),
         });
@@ -592,3 +593,57 @@ it.each(['success', 'failure'] as const)(
     }
   },
 );
+it('keeps refresh and draft DOM stable during detail invalidation and applies new server facts', async () => {
+  const detail = fixture();
+  history.replaceState(null, '', '/factory?task=task-1');
+  const state = {
+    enabled: true,
+    policy: 'isolated-local-v1',
+    repos: [],
+    items: [detail.work],
+  };
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async (url) =>
+      response(url === '/api/factory/state' ? state : detail),
+    );
+  await render();
+  await act(async () => button('Edit draft').click());
+  act(() => fill('textarea', 'Held local edit'));
+  const editor = container.querySelector('textarea')!;
+  editor.focus();
+  let resolve!: (value: Response) => void;
+  fetch.mockImplementation(
+    () =>
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+  );
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-detail'] });
+  });
+  await flush();
+  expect(button('Refresh').disabled).toBe(false);
+  expect(container.querySelector('textarea')).toBe(editor);
+  expect(document.activeElement).toBe(editor);
+  await act(async () => resolve(response(detail)));
+  await flush();
+  expect(editor.value).toBe('Held local edit');
+  expect(container.querySelector('textarea')).toBe(editor);
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-detail'] });
+  });
+  await act(async () =>
+    resolve(
+      response({
+        ...detail,
+        work: { ...detail.work, title: 'Updated task title' },
+      }),
+    ),
+  );
+  await flush();
+  expect(container.querySelector('.factory-title h2')?.textContent).toBe(
+    'Updated task title',
+  );
+  expect(editor.value).toBe('Held local edit');
+});

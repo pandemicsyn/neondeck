@@ -203,6 +203,29 @@ it('caps active deliveries for webhook and manual sync while permitting an exist
   ).toHaveLength(5000);
 });
 
+it('does not charge authenticated removal backlog against provider-read capacity', () => {
+  const { paths } = setup();
+  dbRun(paths, (db) => {
+    const insert = db.prepare(
+      "INSERT INTO factory_linear_records(id,kind,record) VALUES(?,'delivery',?)",
+    );
+    for (let index = 0; index < 5000; index++) {
+      const row = delivery(index, 'remove');
+      insert.run(row.id, JSON.stringify(row));
+    }
+  });
+  expect(acceptLinearDelivery(incoming, paths).duplicate).toBe(false);
+  expect(acceptLinearDelivery(incoming, paths).duplicate).toBe(true);
+  expect(() =>
+    acceptLinearDelivery({ ...incoming, digest: 'conflicting' }, paths),
+  ).toThrow('identity conflict');
+  expect(
+    dbRun(paths, (db) =>
+      linearRecords(db, 'delivery', { action: 'remove', state: 'pending' }),
+    ),
+  ).toHaveLength(5000);
+});
+
 it('removal batches use oldest due rows and eventually process the tail', () => {
   const { paths } = setup();
   dbRun(paths, (db) => {
