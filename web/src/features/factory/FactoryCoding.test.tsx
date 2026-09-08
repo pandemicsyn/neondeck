@@ -1059,3 +1059,127 @@ it('shows fresh-release waiting state and explicit access to a single historical
   expect(container.querySelector('.factory-coding-run')).toBeNull();
   expect(container.textContent).toContain('awaiting automatic dispatch');
 });
+
+it('shows persisted limit diagnostics and offers only a deliberate recheck after resolution', async () => {
+  current = codingRun('candidate-awaiting-review');
+  current.validationAdmission = {
+    blocker: 'candidate-unavailable',
+    reasonCode: 'file-too-large',
+    message: 'A changed file exceeds the snapshot size limit.',
+    recovery: 'Retrying the unchanged candidate will hit the same limit.',
+    diagnosticReference: '12345678-1234-4234-8234-123456789012',
+    observedAt: '2026-09-07T00:00:00.000Z',
+    nextAction: 'inspect-diagnostics',
+  };
+  await render(
+    <FactoryCoding
+      workId="work-demo"
+      eligible
+      currentReleaseId="release-demo"
+    />,
+  );
+  const attention = container.querySelector('#factory-validation-attention')!;
+  expect(attention.textContent).toContain('file-too-large');
+  expect(attention.textContent).toContain(
+    '12345678-1234-4234-8234-123456789012',
+  );
+  expect(attention.textContent).toContain('unchanged candidate');
+  expect(attention.textContent).toContain(
+    'Resolve the issue above, then recheck validation',
+  );
+  expect(button('Recheck validation').disabled).toBe(false);
+  expect(attention.querySelector('a')).toBeNull();
+  expect(calls).toEqual([]);
+});
+it.each([true, false])(
+  'only offers explicit validation retry for current release: %s',
+  async (isCurrent) => {
+    current = codingRun('candidate-awaiting-review');
+    current.validationAdmission = {
+      blocker: 'candidate-unavailable',
+      reasonCode: 'capture-failed',
+      message: 'Snapshot capture failed.',
+      recovery: 'Retry after resolving the cause.',
+      observedAt: '2026-09-07T00:00:00.000Z',
+      nextAction: 'retry-validation',
+    };
+    await render(
+      <FactoryCoding
+        workId="work-demo"
+        eligible
+        currentReleaseId={isCurrent ? 'release-demo' : 'new-release'}
+      />,
+    );
+    if (!isCurrent) {
+      await act(async () => {
+        const select = container.querySelector('select')!;
+        select.value = 'run-demo';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await flush();
+    }
+    expect(calls).toEqual([]);
+    const retry = [...container.querySelectorAll('button')].find(
+      (item) => item.textContent === 'Retry validation admission',
+    );
+    expect(!!retry).toBe(isCurrent);
+    if (isCurrent) {
+      await click('Retry validation admission');
+      expect(calls).toEqual([
+        {
+          url: '/api/factory-delivery/candidates/run-demo/validation/retry',
+          body: {
+            expectedVersion: 3,
+            reason:
+              'Human requested retry of the existing released validation policy',
+          },
+        },
+      ]);
+    }
+  },
+);
+it('retries the current saved generic attention and renders the fresh specific blocker', async () => {
+  current = codingRun('candidate-awaiting-review');
+  current.validationAdmission = {
+    blocker: 'candidate-unavailable',
+    message: 'Reconcile its evidence and retry validation.',
+    observedAt: '2026-09-01T00:00:00.000Z',
+    nextAction: 'retry-validation',
+  };
+  const originalFetch = vi.mocked(globalThis.fetch).getMockImplementation()!;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    if (
+      init?.method === 'POST' &&
+      String(input).endsWith('/validation/retry')
+    ) {
+      calls.push({ url: String(input), body: JSON.parse(String(init.body)) });
+      current.validationAdmission = {
+        blocker: 'candidate-unavailable',
+        reasonCode: 'file-too-large',
+        message:
+          'Changed file assets/image.png is 4000000 bytes; limit 2097152 bytes.',
+        recovery: 'Retrying the unchanged candidate cannot help.',
+        observedAt: '2026-09-07T00:00:00.000Z',
+        nextAction: 'inspect-diagnostics',
+      };
+      return response(current);
+    }
+    return originalFetch(input, init);
+  });
+  await render(
+    <FactoryCoding
+      workId="work-demo"
+      eligible
+      currentReleaseId="release-demo"
+    />,
+  );
+  expect(container.textContent).toContain(
+    'Earlier failure did not record a specific reason',
+  );
+  expect(calls).toEqual([]);
+  await click('Retry validation admission');
+  await flush();
+  expect(calls[0]?.body).toMatchObject({ expectedVersion: 3 });
+  expect(container.textContent).toContain('4000000 bytes; limit 2097152 bytes');
+  expect(button('Recheck validation').disabled).toBe(false);
+});

@@ -64,9 +64,13 @@ it('rejects malformed signed candidate and executable Git filters', async () => 
     f.handle.attemptToken,
     { version: 1 },
   );
-  await expect(captureCandidateEvidence(f.handle)).rejects.toThrow();
+  await expect(captureCandidateEvidence(f.handle)).rejects.toMatchObject({
+    code: 'integrity-failed',
+  });
   f.git(f.root, ['config', 'filter.fixture.clean', '/usr/bin/false']);
-  await expect(captureCandidateEvidence(f.handle)).rejects.toThrow('filters');
+  await expect(captureCandidateEvidence(f.handle)).rejects.toMatchObject({
+    code: 'ownership-invalid',
+  });
 });
 
 it('rejects untracked chmod between retained collection and first freeze', async () => {
@@ -93,9 +97,7 @@ it('blocks legacy retained untracked evidence whose original mode is unproven', 
     f.handle.attemptToken,
     candidate,
   );
-  await expect(captureCandidateEvidence(f.handle)).rejects.toThrow(
-    'mode is unproven',
-  );
+  await expect(captureCandidateEvidence(f.handle)).rejects.toThrow('integrity');
 });
 
 it('retains frozen trees across GC before publication and refuses ref takeover', async () => {
@@ -112,6 +114,50 @@ it('retains frozen trees across GC before publication and refuses ref takeover',
   );
   f.git(f.root, ['update-ref', ref, `${evidence.headSha}^{tree}`]);
   await expect(captureCandidateEvidence(f.handle)).rejects.toThrow(
-    'retention ref ownership',
+    'retention ownership',
   );
+});
+
+it('classifies missing retained evidence and unsettled writers safely', async () => {
+  const f = await fixture();
+  await rm(join(f.handle.directory, 'candidate.json'));
+  await expect(captureCandidateEvidence(f.handle)).rejects.toMatchObject({
+    code: 'candidate-unavailable',
+  });
+  const receiptPath = join(f.handle.directory, 'receipt.json');
+  const receipt = (await readSigned(
+    receiptPath,
+    f.handle.attemptToken,
+  )) as Record<string, unknown>;
+  await writeSigned(receiptPath, f.handle.attemptToken, {
+    ...receipt,
+    noWriter: false,
+  });
+  await expect(captureCandidateEvidence(f.handle)).rejects.toMatchObject({
+    code: 'writer-unsettled',
+  });
+});
+
+it('freezes authenticated candidate evidence with an unchanged large baseline blob', async () => {
+  const f = await fixture({ largeTrackedFile: true });
+  const evidence = await captureCandidateEvidence(f.handle);
+  expect(f.git(f.root, ['rev-parse', `${evidence.treeSha}:large.bin`])).toBe(
+    f.git(f.root, ['rev-parse', `${evidence.baseSha}:large.bin`]),
+  );
+  expect(f.git(f.root, ['show', `${evidence.treeSha}:a.txt`])).toBe(
+    'candidate\n',
+  );
+  expect(f.git(f.root, ['show', `${evidence.treeSha}:new.txt`])).toBe('new\n');
+  expect(
+    (await assertCandidateEvidenceCurrent(f.handle, evidence)).evidenceDigest,
+  ).toBe(evidence.evidenceDigest);
+  // Even an index promise cannot make mutated large baseline bytes current.
+  f.git(f.root, ['update-index', '--assume-unchanged', 'large.bin']);
+  await writeFile(
+    join(f.root, 'large.bin'),
+    Buffer.alloc(4 * 1024 * 1024, 0x5a),
+  );
+  await expect(
+    assertCandidateEvidenceCurrent(f.handle, evidence),
+  ).rejects.toMatchObject({ code: 'file-too-large' });
 });

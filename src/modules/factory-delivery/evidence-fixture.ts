@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { writeSigned, artifactHash, hostGit } from '../coding-runs';
 export const candidateEvidenceFixtureRoots: string[] = [];
-export async function candidateEvidenceFixture() {
+export async function candidateEvidenceFixture(
+  options: { largeTrackedFile?: boolean } = {},
+) {
   const home = await realpath(
     await mkdtemp(join(tmpdir(), 'candidate-evidence-')),
   );
@@ -20,6 +22,11 @@ export async function candidateEvidenceFixture() {
     execFileSync('/usr/bin/git', args, { cwd, encoding: 'utf8' });
   git(source, ['init', '-q']);
   await writeFile(join(source, 'a.txt'), 'base\n');
+  if (options.largeTrackedFile)
+    await writeFile(
+      join(source, 'large.bin'),
+      Buffer.alloc(4 * 1024 * 1024, 0xa5),
+    );
   git(source, ['add', '.']);
   git(source, [
     '-c',

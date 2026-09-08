@@ -18,6 +18,7 @@ export { assertTriageBudget } from './triage-budget';
 
 export { invalidateFactoryConfig } from './config-invalidation';
 export { codingHandle } from './coding-handle';
+export { CodingAuthorityChangedError } from './coding-authority-error';
 export { assertCodingAuthoritySnapshot, codingDigest } from './coding-context';
 export {
   launchReservedCodingRun,

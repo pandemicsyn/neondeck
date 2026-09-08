@@ -1,3 +1,4 @@
+import { FactoryValidationAttention } from './FactoryValidationAttention';
 import { useFactoryRefresh } from './useFactoryRefresh';
 import { FactoryDelivery } from './FactoryDelivery';
 import { useState } from 'react';
@@ -240,6 +241,7 @@ export function FactoryCoding({
           key={selectedId}
           id={selectedId}
           workId={workId}
+          currentReleaseId={currentReleaseId}
           onDiscussDelivery={onDiscussDelivery}
         />
       )}
@@ -251,11 +253,13 @@ function FactoryCodingRunDetail({
   automaticValidationReleaseIds,
   id,
   workId,
+  currentReleaseId,
   onDiscussDelivery,
 }: {
   automaticValidationReleaseIds: string[];
   id: string;
   workId: string;
+  currentReleaseId?: string;
   onDiscussDelivery?: (evidence: string) => void;
 }) {
   const client = useQueryClient();
@@ -470,39 +474,20 @@ function FactoryCodingRunDetail({
         <FactoryCodingEvidence id={id} />
       </FactoryStageSection>
       {run.data.validationAdmission && (
-        <section
-          className="factory-error"
-          aria-label="Validation admission needs attention"
-          id="factory-validation-attention"
-          tabIndex={-1}
-        >
-          <h4>Validation could not start</h4>
-          <p>{run.data.validationAdmission.message}</p>
-          {run.data.validationAdmission.nextAction === 'retry-validation' ? (
-            <button
-              disabled={pending || !!run.error}
-              onClick={() => void retryValidation()}
-            >
-              {pending
-                ? 'Retrying validation admission…'
-                : 'Retry validation admission'}
-            </button>
-          ) : onDiscussDelivery ? (
-            <button
-              onClick={() =>
-                onDiscussDelivery(
-                  `Validation admission needs a plan review: ${run.data!.validationAdmission!.message}`,
-                )
-              }
-            >
-              Review validation policy with Neon
-            </button>
-          ) : (
-            <a href={`/factory?task=${encodeURIComponent(workId)}`}>
-              Open task planning
-            </a>
-          )}
-        </section>
+        <FactoryValidationAttention
+          attention={run.data.validationAdmission}
+          runId={record.runId}
+          releaseId={record.snapshot.releaseId}
+          workId={workId}
+          canRetry={
+            record.status === 'candidate' &&
+            record.snapshot.releaseId === currentReleaseId
+          }
+          pending={pending}
+          stale={!!run.error}
+          onRetry={() => void retryValidation()}
+          onDiscuss={onDiscussDelivery}
+        />
       )}
       {record.candidate && !run.data.diff && (
         <p>

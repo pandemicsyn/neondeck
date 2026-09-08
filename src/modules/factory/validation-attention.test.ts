@@ -20,6 +20,11 @@ it('retains public-safe validation attention across reads without mutating termi
       message: 'Reconcile retained evidence and retry validation.',
       observedAt: new Date().toISOString(),
       nextAction: 'retry-validation',
+      reasonCode: 'unexpected-admission-failure',
+      diagnosticReference: '12345678-1234-4234-8234-123456789012',
+      stage: 'preview',
+      recovery:
+        'Report this run and its stored diagnostic reference for investigation.',
     };
     saveValidationAttention('run', attention, paths);
     expect(readValidationAttention('run', paths)).toEqual(attention);

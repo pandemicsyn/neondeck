@@ -1,5 +1,23 @@
 # Deviations Log
 
+## 2026-09-07 - Reuse unchanged Git objects during factory validation
+
+- Roadmap item: Factory candidate validation and live acceptance.
+- Decision: Replace whole-checkout byte recapture with verified reuse of existing
+  Git blobs for unchanged files; retain bounded changed/untracked capture and
+  exact candidate checks. Add safe typed admission failure reasons and recovery.
+- Reason: Live acceptance reached coding completion but an unchanged tracked
+  image exceeded the snapshot's per-file read limit. Generic attention text hid
+  the specific blocker and offered no useful action.
+- Scope: Follow-up layer above PR #432. No worker authority, automatic retry,
+  publication permission or runtime data changes are authorized by this fix.
+- Verification: Both independent static reviews are clean; Node 26 checks pass
+  with 3,198 unit tests. Dashboard/server build, changed-file formatting and
+  synthetic desktop/narrow recovery controls passed. Explicit recheck retains
+  the original run, release and admission guards.
+- Follow-up: `factory/CANDIDATE_SNAPSHOT_RECOVERY.md` tracks isolated regression
+  verification, independent review and pending live retry of retained work.
+
 ## 2026-09-07 - Separate local validation from factory publication
 
 - Roadmap item: Factory Slice 3 candidate-to-PR and operator UX.
