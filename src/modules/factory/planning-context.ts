@@ -1,3 +1,5 @@
+import { repoFactoryWorkflowsSchema } from '../../../shared/repo-workflows';
+import { readRepoWorkflows } from '../repo-workflows';
 import { readFileSync } from 'node:fs';
 import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
@@ -14,6 +16,7 @@ import {
 const str = v.string();
 const nullable = v.nullable(str);
 export const contextSchema = v.object({
+  repoWorkflows: v.optional(v.nullable(repoFactoryWorkflowsSchema)),
   capturedAt: str,
   model: str,
   utilityModel: str,
@@ -59,6 +62,10 @@ export function captureContext(
     /* Optional SOUL. */
   }
   return v.parse(contextSchema, {
+    repoWorkflows:
+      current.work.repoId && current.repoContext
+        ? readRepoWorkflows(current.work.repoId, paths).workflows
+        : null,
     capturedAt: new Date().toISOString(),
     model: models.displayAssistant,
     utilityModel: models.utility,

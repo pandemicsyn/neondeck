@@ -464,6 +464,8 @@ export function releaseFactoryWork(
     );
     if (previous) {
       if (
+        (data.workflowId != null &&
+          previous.validationPolicy?.workflow?.id !== data.workflowId) ||
         !isDeepStrictEqual(previous.validationPolicy, data.validationPolicy) ||
         previous.specVersion !== data.specVersion ||
         previous.specHash !== data.specHash ||
@@ -491,11 +493,16 @@ export function releaseFactoryWork(
         'Coding configuration changed or selection was not reviewed. Reload coding settings before releasing.',
         current,
       );
+    const revision = current.revisions.at(-1)!;
+    const workflowId =
+      data.workflowId === undefined
+        ? revision.spec.workflowId
+        : data.workflowId;
     if (
       data.validationPolicy &&
       !isDeepStrictEqual(
         data.validationPolicy,
-        factoryValidationPolicy(current.work.repoId!, paths),
+        factoryValidationPolicy(current.work.repoId!, paths, workflowId),
       )
     )
       throw new FactoryError(
@@ -503,7 +510,6 @@ export function releaseFactoryWork(
         'Validation settings changed. Refresh the validation policy before releasing.',
         current,
       );
-    const revision = current.revisions.at(-1)!;
     if (
       revision.version !== data.specVersion ||
       revision.hash !== data.specHash ||

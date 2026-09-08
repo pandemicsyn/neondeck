@@ -143,6 +143,22 @@ export async function readDeliveryEvidence(
         throw new Error('Verification revision mismatch');
       if (
         report.passed &&
+        p.authorization.workflow &&
+        (!report.setup?.passed ||
+          report.setup.checks.length !==
+            p.authorization.workflow.setupCommands.length ||
+          report.setup.checks.some(
+            (c) =>
+              !c.passed ||
+              c.exitCode !== 0 ||
+              c.truncated ||
+              !c.evidenceRef ||
+              !c.outputHash,
+          ))
+      )
+        throw new Error('Incomplete passed setup');
+      if (
+        report.passed &&
         (report.checks.length !== p.authorization.checkCommands.length ||
           report.checks.some(
             (c) =>
@@ -154,9 +170,44 @@ export async function readDeliveryEvidence(
           ))
       )
         throw new Error('Incomplete passed verification');
+      if (report.setup?.failure) {
+        const failure = report.setup.failure;
+        if (
+          !p.authorization.workflow ||
+          ![
+            ...p.authorization.workflow.setupCommands,
+            ...p.authorization.workflow.validationCommands,
+          ].some((c) => c.command === failure.command && c.cwd === failure.cwd)
+        )
+          throw new Error(
+            'Setup diagnostic command is outside approved workflow.',
+          );
+        checks.push({
+          command: sanitizeEvidenceText(
+            `${failure.command} (cwd: ${failure.cwd})`,
+            paths,
+            2000,
+          ).text,
+          passed: false,
+          exitCode: null,
+          durationMs: 0,
+          output: sanitizeEvidenceText(failure.output, paths, 4000).text,
+          truncated: false,
+        });
+      }
       let remaining = 12000;
-      for (const [index, check] of report.checks.entries()) {
-        if (check.command !== p.authorization.checkCommands[index])
+      for (const [index, check] of [
+        ...(report.setup?.checks ?? []),
+        ...report.checks,
+      ].entries()) {
+        if (
+          check.command !==
+          [
+            ...(p.authorization.workflow?.setupCommands.map((c) => c.command) ??
+              []),
+            ...p.authorization.checkCommands,
+          ][index]
+        )
           throw new Error('Verification contract mismatch');
         let output = '';
         let outputTruncated = check.truncated;
@@ -184,6 +235,7 @@ export async function readDeliveryEvidence(
             log.evidenceDigest !== e.revision.candidateDigest ||
             log.treeSha !== e.revision.treeSha ||
             log.command !== check.command ||
+            log.cwd !== check.cwd ||
             log.exitCode !== check.exitCode ||
             log.durationMs !== check.durationMs ||
             codingDigest(log.environment ?? null) !==
@@ -192,7 +244,9 @@ export async function readDeliveryEvidence(
           )
             throw new Error('Check output binding mismatch');
           const snippet = sanitizeEvidenceText(
-            [log.stdout, log.stderr].filter(Boolean).join('\n'),
+            [log.stdout, log.stderr, log.mutation?.reason]
+              .filter(Boolean)
+              .join('\n'),
             paths,
             Math.min(4096, remaining),
           );
@@ -201,7 +255,11 @@ export async function readDeliveryEvidence(
           outputTruncated ||=
             snippet.truncated || log.stdoutTruncated || log.stderrTruncated;
         }
-        const command = sanitizeEvidenceText(check.command, paths, 2000);
+        const command = sanitizeEvidenceText(
+          check.cwd ? `${check.command} (cwd: ${check.cwd})` : check.command,
+          paths,
+          2000,
+        );
         checks.push({
           command: command.text,
           passed: check.passed,
@@ -212,7 +270,7 @@ export async function readDeliveryEvidence(
         });
         truncated ||= outputTruncated || command.truncated;
       }
-      summary = `${checks.filter((c) => c.passed).length} of ${checks.length} recorded checks passed. ${report.passed ? 'The configured check set completed.' : 'Verification did not establish a passing configured check set.'}`;
+      summary = `${report.setup?.passed === false ? 'ENVIRONMENT SETUP blocked. Resolve the environment and explicitly retry the unchanged approved workflow. ' : ''}${checks.filter((c) => c.passed).length} of ${checks.length} recorded checks passed. ${report.passed ? 'The configured check set completed.' : 'Verification did not establish a passing configured check set.'}`;
     } else {
       const report = v.parse(candidateReviewResultSchema, envelope.details);
       const outcome =

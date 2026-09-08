@@ -1,3 +1,7 @@
+import {
+  discoverWorkflowToolchain,
+  workflowEnvironmentValues,
+} from '../repo-workflow-runtime';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -11,7 +15,7 @@ import {
   readSigned,
   writeSigned,
   type LocalAttemptHandle,
-} from '../coding-runs';
+} from '../coding-runs/worker';
 import {
   candidateCheckInputSchema,
   candidateCheckResultSchema,
@@ -70,10 +74,21 @@ export async function runSupervisedCandidateCheck(
   jobId: string,
   cancellationId = jobId,
 ) {
+  input = v.parse(candidateCheckInputSchema, input);
   const job = v.parse(checkJobSchema, {
     jobId,
     cancellationId,
-    request: input,
+    request: input.workflow
+      ? {
+          ...input,
+          workflow: {
+            ...input.workflow,
+            toolchain:
+              input.workflow.toolchain ??
+              (await discoverWorkflowToolchain(input.workflow.runtime)),
+          },
+        }
+      : input,
   });
   if (!jobId || jobId.length > 500)
     throw new Error('A durable verification job ID is required');
@@ -118,12 +133,20 @@ export async function runSupervisedCandidateCheck(
     const loader = worker.endsWith('.ts')
       ? fileURLToPath(import.meta.resolve('tsx'))
       : null;
+    let references: Record<string, string> = {};
+    try {
+      references = job.request.workflow
+        ? workflowEnvironmentValues(job.request.workflow.environmentRefs)
+        : {};
+    } catch {
+      /* Worker records the known missing/invalid-reference setup failure. */
+    }
     const child = spawn(
       process.execPath,
       [...(loader ? ['--import', loader] : []), worker, directory],
       {
         cwd: directory,
-        env: environment.env,
+        env: { ...environment.env, ...references },
         detached: true,
         stdio: 'ignore',
       },
@@ -184,7 +207,24 @@ export async function recoverExistingCandidateCheck(
     checkJobSchema,
     await readSigned(join(directory, 'request.json'), handle.attemptToken),
   );
-  if (JSON.stringify(persisted) !== JSON.stringify(job))
+  if (
+    persisted.request.timeoutMs > job.request.timeoutMs ||
+    JSON.stringify({
+      ...persisted,
+      request: {
+        ...persisted.request,
+        timeoutMs: job.request.timeoutMs,
+        ...(persisted.request.workflow
+          ? {
+              workflow: {
+                ...persisted.request.workflow,
+                toolchain: job.request.workflow?.toolchain,
+              },
+            }
+          : {}),
+      },
+    }) !== JSON.stringify(job)
+  )
     throw new Error('Verification recovery payload mismatch');
   const receipt = v.parse(
     checkTerminalSchema,
@@ -192,7 +232,7 @@ export async function recoverExistingCandidateCheck(
   );
   if (
     receipt.jobId !== jobId ||
-    receipt.requestHash !== artifactHash(JSON.stringify(job))
+    receipt.requestHash !== artifactHash(JSON.stringify(persisted))
   )
     throw new Error('Verification receipt binding mismatch');
   return receipt.result;

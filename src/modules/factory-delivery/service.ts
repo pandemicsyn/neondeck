@@ -1,3 +1,4 @@
+import { candidateVerificationSchema } from './verification-contract';
 import { admitReleasedValidation } from './validation-service';
 import { awaitsPublication } from './delivery-aggregate';
 import { withFactorySpan, deliveryCorrelation } from '../factory-observability';
@@ -221,7 +222,17 @@ export function advanceFactoryDelivery(
           e.kind === kind &&
           sameDeliveryRevision(e.revision, pipeline.revision),
       );
-    const verification = latest('verification');
+    let verification = latest('verification');
+    if (
+      verification?.result === 'blocked' &&
+      pipeline.interventions.some(
+        (i) =>
+          i.kind === 'environment' &&
+          i.resolution &&
+          i.id === `environment:${verification!.id}`,
+      )
+    )
+      verification = undefined;
     const review = latest('review');
     if (verification?.result === 'failed' || review?.result === 'failed') {
       const failure = review?.result === 'failed' ? review : verification!;
@@ -246,6 +257,26 @@ export function advanceFactoryDelivery(
         () => io.repair(pipeline, instructions, `repair:${failure.id}`, paths),
       );
       return;
+    }
+    if (verification?.result === 'blocked') {
+      const receipt = v.safeParse(
+        v.object({ details: candidateVerificationSchema }),
+        readDeliveryReceipt(verification.evidenceRef),
+      );
+      if (receipt.success && receipt.output.details.setup?.passed === false) {
+        changeDelivery(
+          id,
+          {
+            type: 'intervene',
+            id: `environment:${verification.id}`,
+            kind: 'environment',
+            reason:
+              'ENVIRONMENT SETUP blocked. Inspect the setup command and output. Resolve the environment and explicitly retry this unchanged candidate and approved workflow; workflow changes require renewed approval.',
+          },
+          paths,
+        );
+        return;
+      }
     }
     if (verification?.result === 'blocked' || review?.result === 'blocked') {
       interveneDelivery(
@@ -287,7 +318,13 @@ export function advanceFactoryDelivery(
       );
       return;
     }
-    const effectId = `${kind}:${pipeline.revision.candidateDigest}`;
+    const retryCount = pipeline.interventions.filter(
+      (i) =>
+        i.kind === 'environment' &&
+        i.resolution &&
+        sameDeliveryRevision(i.revision, pipeline.revision),
+    ).length;
+    const effectId = `${kind}:${pipeline.revision.candidateDigest}${kind === 'verification' && retryCount ? `:setup-retry-${retryCount}` : ''}`;
     let effect = pipeline.effects.find((e) => e.id === effectId);
     if (effect?.state === 'delivered') return;
     if (!effect) {
@@ -381,6 +418,22 @@ export function advanceFactoryDelivery(
           },
           paths,
         );
+        const setup =
+          kind === 'verification'
+            ? v.safeParse(candidateVerificationSchema, result.details)
+            : null;
+        if (setup?.success && setup.output.setup?.passed === false)
+          changeDelivery(
+            id,
+            {
+              type: 'intervene',
+              id: `environment:${effectId}`,
+              kind: 'environment',
+              reason:
+                'ENVIRONMENT SETUP blocked. Inspect command output, resolve the environment and explicitly retry this unchanged approved workflow. Changed workflows require renewed approval.',
+            },
+            paths,
+          );
       } else if (kind === 'commit') {
         const result = await withFactorySpan(
           paths,

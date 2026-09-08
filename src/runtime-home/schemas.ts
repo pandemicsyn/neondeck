@@ -1,3 +1,4 @@
+import { repoFactoryWorkflowsSchema } from '../../shared/repo-workflows';
 import { factoryConfigSchema } from '../../shared/factory';
 import * as v from 'valibot';
 import { openAiCompatibleProviderIdIssue } from '../../shared/provider-policy';
@@ -464,6 +465,7 @@ export const appConfigSchema = v.looseObject({
 });
 
 export const repoConfigSchema = v.looseObject({
+  factoryWorkflows: v.optional(repoFactoryWorkflowsSchema),
   id: nonEmptyStringSchema,
   github: v.object({
     owner: nonEmptyStringSchema,

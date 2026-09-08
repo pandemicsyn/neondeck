@@ -1,14 +1,17 @@
 import { join, dirname } from 'node:path';
 import * as v from 'valibot';
-import { executionResult } from '../execution/index.ts';
+import { executionResult } from '../execution/worker.ts';
 import {
   artifactHash,
   privateDirectory,
   readBytesBounded,
   readSigned,
   writeSigned,
-} from '../coding-runs/index.ts';
-import { runCandidateCheck } from './verification-process.ts';
+} from '../coding-runs/worker.ts';
+import {
+  runCandidateCheck,
+  CheckEnvironmentSetupError,
+} from './verification-process.ts';
 import {
   candidateVerificationCancelled,
   checkJobSchema,
@@ -47,21 +50,26 @@ await writeSigned(join(directory, 'started.json'), token, {
   jobId: job.jobId,
 });
 let result;
+const executionStarted = Date.now();
 try {
   result = await runCandidateCheck(job.request, {
     signal: cancellation.signal,
     jobDirectory: join(directory, 'environment'),
   });
-} catch {
+} catch (error) {
   result = {
+    setupBlocked: error instanceof CheckEnvironmentSetupError,
     exitCode: null,
     truncated: false,
-    durationMs: 0,
-    noWriter: false,
+    durationMs: Date.now() - executionStarted,
+    noWriter: error instanceof CheckEnvironmentSetupError,
     timedOut: false,
     cancelled: cancellation.signal.aborted,
     stdout: '',
-    stderr: 'Verification worker could not prove successful completion.',
+    stderr:
+      error instanceof CheckEnvironmentSetupError
+        ? error.message
+        : 'Verification worker could not prove successful completion.',
   };
 } finally {
   polling = false;

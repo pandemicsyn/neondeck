@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { link, open } from 'node:fs/promises';
 import { dirname, basename, join } from 'node:path';
 import * as v from 'valibot';
@@ -8,6 +7,7 @@ import {
   type LocalManifest,
 } from './host-contract.ts';
 import {
+  artifactHash,
   privateDirectory,
   readBytesBounded,
   readSigned,
@@ -33,9 +33,7 @@ const candidateSchema = v.strictObject({
   hashes: v.strictObject({ status: sha, diff: sha, untracked: sha }),
 });
 export type LocalCandidate = v.InferOutput<typeof resultSchema>;
-export function artifactHash(value: string | Buffer) {
-  return createHash('sha256').update(value).digest('hex');
-}
+export { artifactHash } from './host-io.ts';
 
 export async function readRetainedCandidate(
   handle: LocalAttemptHandle,

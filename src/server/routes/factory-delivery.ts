@@ -1,3 +1,4 @@
+import { repoWorkflowProfileSchema } from '../../../shared/repo-workflows';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
@@ -14,6 +15,7 @@ import {
   readReviewedDeliveryDiff,
   factoryValidationPolicy,
   retryReleasedValidation,
+  retryFactoryEnvironmentSetup,
   factoryPublicationReadiness,
   authorizeFactoryPublication,
   setupFactoryPublication,
@@ -24,6 +26,7 @@ const services = {
   readReviewedDeliveryDiff,
   factoryValidationPolicy,
   retryReleasedValidation,
+  retryFactoryEnvironmentSetup,
   factoryPublicationReadiness,
   authorizeFactoryPublication,
   setupFactoryPublication,
@@ -101,8 +104,29 @@ export function createFactoryDeliveryRoutes(
       ),
     ),
   );
-  routes.get('/validation-policy/:repoId', (c) =>
-    c.json(io.factoryValidationPolicy(c.req.param('repoId'), paths)),
+  routes.get('/validation-policy/:repoId', (c) => {
+    const query = v.parse(
+      v.strictObject({
+        workflowId: v.optional(repoWorkflowProfileSchema.entries.id),
+      }),
+      c.req.query(),
+    );
+    return c.json(
+      io.factoryValidationPolicy(
+        c.req.param('repoId'),
+        paths,
+        query.workflowId,
+      ),
+    );
+  });
+  routes.post('/deliveries/:id/environment/retry', async (c) =>
+    c.json(
+      await io.retryFactoryEnvironmentSetup(
+        c.req.param('id'),
+        await c.req.json(),
+        paths,
+      ),
+    ),
   );
   routes.post('/candidates/:runId/validation/retry', async (c) =>
     c.json(

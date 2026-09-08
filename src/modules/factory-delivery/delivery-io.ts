@@ -188,6 +188,7 @@ export const deliveryIO: DeliveryIO = {
         verificationRoot: workspace.root,
         jobId: effect.id,
         checks: pipeline.authorization.checkCommands,
+        workflow: pipeline.authorization.workflow,
         timeoutMs: Math.min(600000, effect.reservedExecutionMs!),
         maxOutputBytes: 1048576,
         remainingMs: effect.reservedExecutionMs!,
@@ -199,7 +200,8 @@ export const deliveryIO: DeliveryIO = {
       producerId: `verification:${pipeline.pipelineId}:${effect.id}`,
       result: result.passed
         ? 'passed'
-        : !result.checks.length ||
+        : result.setup?.passed === false ||
+            !result.checks.length ||
             result.checks.some((c) => c.exitCode === null && c.durationMs === 0)
           ? 'blocked'
           : 'failed',

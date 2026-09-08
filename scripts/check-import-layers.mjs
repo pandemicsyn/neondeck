@@ -86,6 +86,15 @@ const allowedLayerBridges = new Set([
   'src/modules/sessions/approval-nudges.ts -> src/agents/display-assistant.ts',
 ]);
 
+// These exact public entrypoints expose only process/output and signed-artifact
+// primitives to detached workers. Layer checks still apply; no private-module
+// exception or wildcard is granted. The verification worker build-graph test
+// independently forbids action/model/runtime dependencies through these entries.
+const workerPublicEntrypoints = new Set([
+  'src/modules/execution/worker.ts',
+  'src/modules/coding-runs/worker.ts',
+]);
+
 const frontendApiHelperImports = new Set(['web/src/lib/query.ts']);
 
 const importPattern =
@@ -198,6 +207,7 @@ function checkBackendImport(sourceRel, targetRel) {
     targetModule &&
     sourceModule !== targetModule &&
     targetRel !== 'src/modules/factory-delivery/store.ts' &&
+    !workerPublicEntrypoints.has(targetRel) &&
     targetRel !== `src/modules/${targetModule}/index.ts`
   ) {
     violations.push({

@@ -1,3 +1,4 @@
+import { repoWorkflowProfileSchema } from './repo-workflows';
 import { linearConnectionSchema } from './factory-linear';
 import { validationPolicySchema } from './factory-delivery';
 import * as v from 'valibot';
@@ -61,6 +62,7 @@ export const factoryPolicy = {
 } as const;
 export const specSchema = v.pipe(
   v.strictObject({
+    workflowId: v.optional(v.nullable(repoWorkflowProfileSchema.entries.id)),
     outcome: text(),
     scope: text(),
     nonGoals: text(),
@@ -228,6 +230,7 @@ export const saveSpecSchema = v.strictObject({
   spec: specSchema,
 });
 export const releaseInputSchema = v.strictObject({
+  workflowId: v.optional(v.nullable(repoWorkflowProfileSchema.entries.id)),
   requestKey: label,
   expectedVersion: version,
   specVersion: version,
@@ -276,6 +279,7 @@ export function renderFactorySpec(spec: FactorySpec) {
     `## Scope\n${spec.scope}`,
     `## Non-goals\n${spec.nonGoals}`,
     `## Approach\n${spec.approach}`,
+    ...(spec.workflowId ? [`## Repository workflow\n${spec.workflowId}`] : []),
     `## Acceptance criteria\n${spec.acceptanceCriteria.map((c) => `- [${c.id}] ${c.text}`).join('\n')}`,
     `## Constraints\n${spec.constraints}`,
     `## Assumptions\n${spec.assumptions}`,

@@ -468,3 +468,140 @@ async function advanceWithPublication(
   if (awaitsPublication(p)) approveTestPublication(p, paths);
   return advanceFactoryDelivery(id, paths, io);
 }
+
+it('pauses a paid setup failure until explicit same-candidate retry, retaining prior evidence and never repairing setup', async () => {
+  const { retryFactoryEnvironmentSetup } = await import('./environment-retry');
+  const workflow = {
+    id: 'test',
+    name: 'Test',
+    setupCommands: [{ command: 'npm ci', cwd: '.' }],
+    validationCommands: [{ command: 'npm run check', cwd: '.' }],
+    setupTimeoutMs: 60000,
+    validationTimeoutMs: 60000,
+    runtime: {},
+    environmentRefs: [],
+  };
+  const created = reserveDeliveryPipeline(
+    {
+      ...reservation,
+      authorization: { ...reservation.authorization, workflow },
+    },
+    paths,
+  );
+  const io = fakeIO();
+  io.verify = vi.fn(async () => ({
+    producerId: 'setup-check',
+    result: 'blocked' as const,
+    durationMs: 125,
+    details: {
+      evidenceDigest: revision.candidateDigest,
+      revision: revision.treeSha,
+      passed: false,
+      noWriter: true,
+      durationMs: 125,
+      checks: [],
+      setup: {
+        passed: false,
+        checks: [
+          {
+            command: 'npm ci',
+            passed: false,
+            exitCode: 1,
+            truncated: false,
+            durationMs: 125,
+            evidenceRef: null,
+            outputHash: null,
+          },
+        ],
+      },
+    },
+  }));
+  await advanceFactoryDelivery(created.pipelineId, paths, io);
+  let current = getDeliveryPipeline(created.pipelineId, paths)!;
+  expect(current.interventions).toMatchObject([
+    { kind: 'environment', resolution: null },
+  ]);
+  expect(current.effects[0]).toMatchObject({
+    state: 'delivered',
+    executionMs: 125,
+  });
+  expect(io.review).not.toHaveBeenCalled();
+  expect(io.repair).not.toHaveBeenCalled();
+  await advanceFactoryDelivery(created.pipelineId, paths, io);
+  expect(io.verify).toHaveBeenCalledTimes(1);
+  const retained = current.evidence[0];
+  const policy = {
+    version: 'local-validation-v1' as const,
+    configFingerprint: current.authorization.configFingerprint,
+    checkCommands: current.authorization.checkCommands,
+    workflow,
+    reviewerModel: 'test',
+    reviewerThinkingLevel: null,
+    maxRepairAttempts: 2 as const,
+    totalExecutionMs: 10800000 as const,
+  };
+  const deps = {
+    checkout: vi.fn(async () => {}),
+    policy: () => policy,
+    detail: vi.fn(
+      () =>
+        ({}) as ReturnType<
+          typeof import('./service-operator').factoryDeliveryDetail
+        >,
+    ),
+    assert: vi.fn(() => ({}) as never),
+    capture: async () => candidate,
+  };
+  await expect(
+    retryFactoryEnvironmentSetup(
+      current.pipelineId,
+      { expectedVersion: current.version, reason: 'Environment ready' },
+      paths,
+      {
+        ...deps,
+        policy: () => ({
+          ...policy,
+          workflow: { ...workflow, setupCommands: [] },
+        }),
+      },
+    ),
+  ).rejects.toThrow('changed');
+  expect(getDeliveryPipeline(created.pipelineId, paths)!.version).toBe(
+    current.version,
+  );
+  await retryFactoryEnvironmentSetup(
+    current.pipelineId,
+    { expectedVersion: current.version, reason: 'Environment ready' },
+    paths,
+    deps,
+  );
+  io.verify = vi.fn(async () => ({
+    producerId: 'retry-check',
+    result: 'passed' as const,
+    durationMs: 75,
+    details: {
+      evidenceDigest: revision.candidateDigest,
+      revision: revision.treeSha,
+      passed: true,
+      noWriter: true,
+      durationMs: 75,
+      checks: [],
+      setup: { passed: true, checks: [] },
+    },
+  }));
+  await advanceFactoryDelivery(created.pipelineId, paths, io);
+  current = getDeliveryPipeline(created.pipelineId, paths)!;
+  expect(io.verify).toHaveBeenCalledTimes(1);
+  expect(current.revision).toEqual(revision);
+  expect(current.evidence[0]).toEqual(retained);
+  expect(current.evidence).toHaveLength(2);
+  expect(current.effects.map((e) => e.id)).toEqual([
+    `verification:${revision.candidateDigest}`,
+    `verification:${revision.candidateDigest}:setup-retry-1`,
+  ]);
+  expect(current.effects.map((e) => e.executionMs)).toEqual([125, 75]);
+  expect(io.review).not.toHaveBeenCalled();
+  expect(io.repair).not.toHaveBeenCalled();
+  await advanceFactoryDelivery(created.pipelineId, paths, io);
+  expect(io.review).toHaveBeenCalledTimes(1);
+});

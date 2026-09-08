@@ -1,3 +1,4 @@
+import { candidateVerificationSchema } from './verification-contract';
 import { resolvePublicationContext } from './publication-context';
 import { terminalPrObservation } from './terminal-observation';
 import { recoverEffectNonadmission } from './publication-nonadmission';
@@ -333,6 +334,7 @@ async function recoverKnownDeliveryEffect(
         jobId: effect.id,
         recoverOnly: true,
         checks: p.authorization.checkCommands,
+        workflow: p.authorization.workflow,
         timeoutMs: Math.min(600000, effect.reservedExecutionMs!),
         maxOutputBytes: 1048576,
         remainingMs: effect.reservedExecutionMs!,
@@ -341,7 +343,11 @@ async function recoverKnownDeliveryEffect(
     );
     result = {
       producerId: `verification:${p.pipelineId}:${effect.id}`,
-      result: report.passed ? 'passed' : 'failed',
+      result: report.passed
+        ? 'passed'
+        : report.setup?.passed === false
+          ? 'blocked'
+          : 'failed',
       durationMs: report.durationMs,
       details: report,
     };
@@ -431,6 +437,28 @@ async function recoverKnownDeliveryEffect(
     },
     paths,
   );
+  if (effect.kind === 'verification' && result.result === 'blocked') {
+    const report = v.safeParse(candidateVerificationSchema, result.details);
+    const latest = requireDelivery(p.pipelineId, paths);
+    if (
+      report.success &&
+      report.output.setup?.passed === false &&
+      !latest.interventions.some((i) => i.id === `environment:${effect.id}`) &&
+      !latest.outcome &&
+      !latest.interventions.some((i) => !i.resolution)
+    )
+      changeDelivery(
+        p.pipelineId,
+        {
+          type: 'intervene',
+          id: `environment:${effect.id}`,
+          kind: 'environment',
+          reason:
+            'ENVIRONMENT SETUP blocked. Inspect command output and explicitly retry the unchanged approved workflow after resolving the environment.',
+        },
+        paths,
+      );
+  }
 }
 
 export async function recoverDeliveryEffect(

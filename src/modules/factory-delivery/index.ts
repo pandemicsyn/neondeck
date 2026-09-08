@@ -20,3 +20,17 @@ export {
 } from './publication-service';
 
 export { readReviewedDeliveryDiff } from './reviewed-diff';
+export { retryFactoryEnvironmentSetup } from './environment-retry';
+export {
+  runCandidateCheck,
+  candidateCheckInputSchema,
+  candidateCheckResultSchema,
+  prepareCandidateCheckEnvironment,
+  CheckEnvironmentSetupError,
+  type CandidateCheckResult,
+} from './verification-process';
+export {
+  runSupervisedCandidateCheck,
+  recoverExistingCandidateCheck,
+  cancelCandidateVerification,
+} from './verification-supervisor';

@@ -1,18 +1,44 @@
+import {
+  workflowExecutionSchema,
+  workflowEnvironmentValues,
+  redactWorkflowOutput,
+  workflowCommandCwd,
+  runtimeVersionMatches,
+  discoverWorkflowToolchain,
+  assertWorkflowToolchain,
+  WorkflowRuntimeUnavailableError,
+} from '../repo-workflow-runtime';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  stat,
+  symlink,
+} from 'node:fs/promises';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  resolve,
+  relative,
+} from 'node:path';
 import { tmpdir } from 'node:os';
 import * as v from 'valibot';
-import { privateDirectory } from '../coding-runs';
-import { splitCommand, hasShellOperator } from '../execution';
+import { privateDirectory } from '../coding-runs/worker';
+import { splitCommand, hasShellOperator } from '../execution/worker';
 
 const natural = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 export const candidateCheckInputSchema = v.strictObject({
-  command: v.pipe(v.string(), v.minLength(1), v.maxLength(2000)),
+  command: v.pipe(v.string(), v.minLength(1), v.maxLength(2048)),
+  workflow: v.optional(workflowExecutionSchema),
   cwd: v.pipe(v.string(), v.minLength(1)),
-  timeoutMs: v.pipe(natural, v.minValue(1), v.maxValue(600000)),
+  timeoutMs: v.pipe(natural, v.minValue(1), v.maxValue(3600000)),
   maxOutputBytes: v.pipe(natural, v.minValue(1), v.maxValue(1048576)),
 });
 const digest = (value: unknown) =>
@@ -26,6 +52,7 @@ export const candidateCheckEnvironmentSchema = v.strictObject({
   executableName: v.pipe(v.string(), v.maxLength(128)),
 });
 export const candidateCheckResultSchema = v.strictObject({
+  setupBlocked: v.optional(v.boolean()),
   exitCode: v.nullable(v.pipe(v.number(), v.safeInteger())),
   truncated: v.boolean(),
   durationMs: natural,
@@ -153,10 +180,13 @@ function killGroup(pid: number, signal: NodeJS.Signals) {
 const pause = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+export class CheckEnvironmentSetupError extends Error {}
+
 export async function runCandidateCheck(
   input: v.InferOutput<typeof candidateCheckInputSchema>,
   options: { signal?: AbortSignal; jobDirectory?: string } = {},
 ): Promise<CandidateCheckResult> {
+  const started = Date.now();
   input = v.parse(candidateCheckInputSchema, input);
   const parsed = splitCommand(input.command);
   if (!parsed.ok || hasShellOperator(input.command))
@@ -177,11 +207,130 @@ export async function runCandidateCheck(
   const environment = await prepareCandidateCheckEnvironment(
     options.jobDirectory,
   );
-  const executable = await resolveCheckExecutable(
-    parsed.file,
-    input.cwd,
-    environment.env.PATH,
-  );
+  let values: Record<string, string>;
+  try {
+    values = input.workflow
+      ? workflowEnvironmentValues(input.workflow.environmentRefs)
+      : {};
+  } catch (error) {
+    throw new CheckEnvironmentSetupError(
+      error instanceof WorkflowRuntimeUnavailableError
+        ? error.message
+        : 'ENVIRONMENT SETUP: required environment references are unavailable or reserved.',
+    );
+  }
+  if (input.workflow) {
+    await workflowCommandCwd(
+      input.workflow.root,
+      relative(input.workflow.root, input.cwd) || '.',
+    );
+    if (
+      input.workflow.runtime.node &&
+      !runtimeVersionMatches(process.version, input.workflow.runtime.node)
+    )
+      throw new CheckEnvironmentSetupError(
+        `ENVIRONMENT SETUP: Node ${input.workflow.runtime.node} is required; the available runtime is ${process.version}.`,
+      );
+    Object.assign(environment.env, values);
+  }
+  const manager = input.workflow?.runtime.packageManager;
+  let managerExecutable: string | undefined;
+  if (input.workflow) {
+    try {
+      const toolchain = await assertWorkflowToolchain(
+        input.workflow.toolchain ??
+          (await discoverWorkflowToolchain(input.workflow.runtime)),
+      );
+      if (manager && !toolchain.packageManager)
+        throw new Error('Missing selected tool.');
+      managerExecutable = toolchain.packageManager?.path;
+      const bin = join(environment.directory, 'bin');
+      await mkdir(bin, { recursive: true, mode: 0o700 });
+      const binaries = new Map<string, string>([
+        ...(toolchain.tools ?? []).map(
+          (tool) => [tool.name, tool.executable.path] as [string, string],
+        ),
+        ['node', process.execPath] as [string, string],
+        ...(manager && managerExecutable
+          ? [[manager.name, managerExecutable] as [string, string]]
+          : []),
+      ]);
+      for (const [name, target] of binaries) {
+        const link = join(bin, name);
+        try {
+          await symlink(target, link);
+        } catch (error) {
+          if (
+            !(
+              error instanceof Error &&
+              'code' in error &&
+              error.code === 'EEXIST'
+            ) ||
+            (await realpath(link)) !== (await realpath(target))
+          )
+            throw error;
+        }
+      }
+      environment.env.PATH = [
+        bin,
+        join(input.cwd, 'node_modules', '.bin'),
+        join(input.workflow.root, 'node_modules', '.bin'),
+        '/usr/bin',
+        '/bin',
+        '/usr/sbin',
+        '/sbin',
+      ].join(':');
+    } catch (error) {
+      throw new CheckEnvironmentSetupError(
+        error instanceof WorkflowRuntimeUnavailableError
+          ? error.message
+          : manager
+            ? `ENVIRONMENT SETUP: ${manager.name}${manager.version ? ` ${manager.version}` : ''} is required but unavailable or changed.`
+            : 'ENVIRONMENT SETUP: discovered workflow tools are unavailable or changed.',
+      );
+    }
+  }
+  let executable;
+  try {
+    executable = await resolveCheckExecutable(
+      manager && parsed.file === manager.name && managerExecutable
+        ? managerExecutable
+        : parsed.file,
+      input.cwd,
+      environment.env.PATH,
+    );
+  } catch {
+    throw new CheckEnvironmentSetupError(
+      `ENVIRONMENT SETUP: command executable ${JSON.stringify(parsed.file)} is unavailable in the private toolchain or declared repository directory.`,
+    );
+  }
+  if (manager) {
+    const proof = await runCandidateCheck(
+      {
+        command: `${JSON.stringify(managerExecutable!)} --version`,
+        cwd: input.cwd,
+        timeoutMs: Math.max(
+          1,
+          Math.min(10000, input.timeoutMs - (Date.now() - started)),
+        ),
+        maxOutputBytes: 1024,
+      },
+      { signal: options.signal, jobDirectory: environment.directory },
+    );
+    if (!proof.noWriter)
+      throw new Error('Runtime preflight process death is uncertain.');
+    if (
+      proof.exitCode !== 0 ||
+      proof.truncated ||
+      proof.timedOut ||
+      proof.cancelled ||
+      (manager.version &&
+        !runtimeVersionMatches(proof.stdout.trim(), manager.version))
+    )
+      throw new CheckEnvironmentSetupError(
+        `ENVIRONMENT SETUP: ${manager.name}${manager.version ? ` ${manager.version}` : ''} is required but its version check did not pass.`,
+      );
+  }
   const normalizedEnvironment = Object.fromEntries(
     Object.entries(environment.env)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -204,10 +353,15 @@ export async function runCandidateCheck(
       runtimeExecutable: process.execPath,
       executable,
       argv: parsed.args,
-      environment: normalizedEnvironment,
+      environment: Object.fromEntries(
+        Object.entries(normalizedEnvironment).map(([key, value]) => [
+          key,
+          key in values ? `<environment-reference:${key}>` : value,
+        ]),
+      ),
+      workflow: input.workflow,
     }),
   });
-  const started = Date.now();
   let bytes = 0,
     truncated = false,
     timedOut = false,
@@ -272,10 +426,13 @@ export async function runCandidateCheck(
   const abort = () => stop();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) stop();
-  const timer = setTimeout(() => {
-    timedOut = true;
-    stop();
-  }, input.timeoutMs);
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      stop();
+    },
+    Math.max(1, input.timeoutMs - (Date.now() - started)),
+  );
   let noWriter = false;
   try {
     // A failed kill must not leave collection waiting forever for leader exit.
@@ -310,13 +467,25 @@ export async function runCandidateCheck(
     return v.parse(candidateCheckResultSchema, {
       exitCode,
       truncated,
-      timedOut,
+      timedOut: timedOut || Date.now() - started > input.timeoutMs,
       cancelled: options.signal?.aborted === true,
       noWriter,
       durationMs: Date.now() - started,
       environment: environmentManifest,
-      stdout: Buffer.concat(output.stdout).toString('utf8'),
-      stderr: Buffer.concat(output.stderr).toString('utf8'),
+      stdout:
+        truncated && Object.keys(values).length
+          ? '[REDACTED: output limit reached with private environment references]'
+          : redactWorkflowOutput(
+              Buffer.concat(output.stdout).toString('utf8'),
+              values,
+            ),
+      stderr:
+        truncated && Object.keys(values).length
+          ? '[REDACTED: output limit reached with private environment references]'
+          : redactWorkflowOutput(
+              Buffer.concat(output.stderr).toString('utf8'),
+              values,
+            ),
     });
   } finally {
     clearTimeout(timer);

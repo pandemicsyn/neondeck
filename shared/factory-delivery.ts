@@ -1,3 +1,4 @@
+import { repoWorkflowProfileSchema } from './repo-workflows';
 import * as v from 'valibot';
 import { deliveryProgressStateSchema } from './factory-progress';
 import { deliveryRevisionSchema } from './factory-delivery-revision';
@@ -6,7 +7,7 @@ export { deliveryRevisionSchema } from './factory-delivery-revision';
 const label = v.pipe(v.string(), v.minLength(1), v.maxLength(500));
 export const deliveryMaxCheckCommands = 16;
 export const deliveryCheckCommandsSchema = v.pipe(
-  v.array(label),
+  v.array(v.pipe(v.string(), v.minLength(1), v.maxLength(2000))),
   v.minLength(1),
   v.maxLength(deliveryMaxCheckCommands),
 );
@@ -74,7 +75,13 @@ export const deliveryRepairSchema = v.strictObject({
 });
 export const deliveryInterventionSchema = v.strictObject({
   id: label,
-  kind: v.picklist(['scope', 'budget', 'authority', 'uncertainty']),
+  kind: v.picklist([
+    'scope',
+    'budget',
+    'authority',
+    'uncertainty',
+    'environment',
+  ]),
   reason: label,
   revision: deliveryRevisionSchema,
   resolution: v.nullable(label),
@@ -93,6 +100,7 @@ export const validationPolicySchema = v.strictObject({
   version: v.literal('local-validation-v1'),
   configFingerprint: hash,
   checkCommands: deliveryCheckCommandsSchema,
+  workflow: v.optional(repoWorkflowProfileSchema),
   reviewerModel: label,
   reviewerThinkingLevel: v.nullable(
     v.picklist(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']),
@@ -121,6 +129,7 @@ export const deliveryAuthorizationSchema = v.pipe(
     target: v.strictObject({ owner: label, name: label, baseBranch: label }),
     configFingerprint: hash,
     checkCommands: deliveryCheckCommandsSchema,
+    workflow: v.optional(repoWorkflowProfileSchema),
     maxRepairAttempts: v.pipe(natural, v.maxValue(2)),
     totalExecutionMs: v.pipe(version, v.maxValue(10800000)),
     initialExecutionMs: natural,

@@ -929,3 +929,20 @@ it('fails closed on corrupted retained usage instead of bypassing the token budg
     /budget exhausted/,
   );
 });
+
+it('rejects a proposed workflow outside the captured saved profile list', async () => {
+  const intent = await planning();
+  expect(() =>
+    proposeFactorySpec(
+      intent.sessionId,
+      intent.id,
+      'workflow-selection',
+      {
+        ...proposal(intent),
+        spec: { ...spec, workflowId: 'invented-workflow' },
+      },
+      paths,
+    ),
+  ).toThrow('Select a saved workflow ID');
+  expect(getFactoryWork(intent.workId, paths).work.specVersion).toBe(1);
+});
