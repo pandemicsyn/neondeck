@@ -1,12 +1,11 @@
+import { useWorkflowDraft } from './useWorkflowDraft';
 import { useWorkflowTrial } from './useWorkflowTrial';
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as v from 'valibot';
 import {
   repoFactoryWorkflowsSchema,
-  type RepoFactoryWorkflows,
   type RepoWorkflowsSnapshot,
-  type RepoWorkflowProposal,
 } from '../../../../shared/repo-workflows';
 import {
   getRepoWorkflows,
@@ -123,12 +122,18 @@ export function RepoWorkflowEditor({
   active?: boolean;
 }) {
   const client = useQueryClient();
-  const [base, setBase] = useState(snapshot);
-  const [draft, setDraft] = useState<RepoFactoryWorkflows | null>(() =>
-    structuredClone(snapshot.workflows),
-  );
-  const [profileIndex, setProfileIndex] = useState(0);
-  const [proposal, setProposal] = useState<RepoWorkflowProposal | null>(null);
+  const {
+    base,
+    setBase,
+    draft,
+    setDraft,
+    profileIndex,
+    setProfileIndex,
+    proposal,
+    setProposal,
+    storageNotice,
+    clearStored,
+  } = useWorkflowDraft(snapshot);
   const [busy, setBusy] = useState('');
   const lock = useRef(false);
   const [error, setError] = useState('');
@@ -165,6 +170,7 @@ export function RepoWorkflowEditor({
               : 'Not configured'}
         </output>
       </div>
+      {storageNotice && <p role="alert">{storageNotice}</p>}
       {stale && (
         <p role="alert">
           Saved settings changed elsewhere. Your draft is retained. Copy any
@@ -175,6 +181,7 @@ export function RepoWorkflowEditor({
         type="button"
         disabled={!!busy}
         onClick={() => {
+          clearStored();
           setBase(snapshot);
           setDraft(structuredClone(snapshot.workflows));
           setProfileIndex(0);
@@ -205,6 +212,7 @@ export function RepoWorkflowEditor({
               expectedFingerprint: base.fingerprint,
               workflows,
             });
+            clearStored();
             setBase(saved);
             setDraft(structuredClone(saved.workflows));
             setProposal(null);

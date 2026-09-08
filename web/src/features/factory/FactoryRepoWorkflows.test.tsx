@@ -1,3 +1,4 @@
+import { readWorkflowDraft, writeWorkflowDraft } from './workflow-draft';
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
@@ -66,6 +67,7 @@ const run = (): RepoWorkflowRun => ({
   finishedAt: null,
 });
 beforeEach(() => {
+  sessionStorage.clear();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   container = document.createElement('div');
   document.body.append(container);
@@ -78,6 +80,7 @@ afterEach(() => {
   act(() => root.unmount());
   client.clear();
   container.remove();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   vi.unstubAllGlobals();
 });
@@ -481,4 +484,123 @@ it('retains a discovered run across repo switching when ownership disappears bef
   );
   expect(visible().textContent).toContain('cleaned up');
   expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+});
+it('restores incomplete profile commands and runtime edits with the original base after remount', async () => {
+  const saved = snapshot();
+  const draft = structuredClone(saved.workflows!);
+  draft.profiles.push({
+    ...draft.profiles[0],
+    id: 'nested',
+    name: 'Nested draft',
+    setupCommands: [{ command: '', cwd: 'extension' }],
+    runtime: { node: '>=28' },
+    environmentRefs: ['BUILD_TOKEN'],
+  });
+  writeWorkflowDraft('demo', {
+    version: 1,
+    base: saved,
+    draft,
+    profileIndex: 1,
+    proposal: null,
+  });
+  await render();
+  expect(container.querySelector('input')?.value).toBe('nested');
+  expect(container.querySelector('textarea')?.value).toBe('');
+  expect(container.textContent).toContain('Unsaved changes');
+  await click('Add setup command');
+  await act(async () => root.render(null));
+  const changed = snapshot();
+  changed.fingerprint = 'c'.repeat(64);
+  await render(changed);
+  expect(container.querySelector('input')?.value).toBe('nested');
+  expect(
+    container
+      .querySelectorAll('.workflow-commands')[0]
+      .querySelectorAll('textarea'),
+  ).toHaveLength(2);
+  expect(container.textContent).toContain('Saved settings changed elsewhere');
+  expect(button('Save workflow').disabled).toBe(true);
+  expect(button('Test setup and validation').disabled).toBe(true);
+  const restored = readWorkflowDraft('demo');
+  expect(restored.status).toBe('loaded');
+  if (restored.status !== 'loaded') throw new Error('Draft missing');
+  expect(restored.value.base.fingerprint).toBe('a'.repeat(64));
+  expect(restored.value.draft?.profiles[1].runtime.node).toBe('>=28');
+});
+it('persists generated suggestions and adopted edits, clearing only after save or explicit discard', async () => {
+  await render();
+  const proposed = snapshot().workflows!;
+  proposed.profiles[0].name = 'Suggested pnpm profile';
+  vi.mocked(proposeRepoWorkflows).mockResolvedValue({
+    ...snapshot(),
+    proposal: {
+      workflows: proposed,
+      rationale: 'Read lockfile',
+      evidencePaths: ['pnpm-lock.yaml'],
+      evidenceRevision: 'a'.repeat(40),
+    },
+  });
+  await click('Ask Neon');
+  await act(async () => root.render(null));
+  await render();
+  expect(container.textContent).toContain('Read lockfile');
+  await click('Use suggestion');
+  await act(async () => root.render(null));
+  await render();
+  expect(container.textContent).toContain('Suggested pnpm profile');
+  vi.mocked(saveRepoWorkflows).mockRejectedValueOnce(new Error('Save failed'));
+  await submit();
+  expect(readWorkflowDraft('demo').status).toBe('loaded');
+  vi.mocked(saveRepoWorkflows).mockImplementation(async (repoId, input) => ({
+    repoId,
+    fingerprint: 'b'.repeat(64),
+    workflows: input.workflows,
+  }));
+  await submit();
+  expect(readWorkflowDraft('demo').status).toBe('missing');
+  await click('Add profile');
+  expect(readWorkflowDraft('demo').status).toBe('loaded');
+  await click('Load saved settings');
+  expect(readWorkflowDraft('demo').status).toBe('missing');
+});
+it('isolates persisted drafts by repository across full remounts', async () => {
+  await render();
+  await click('Add profile');
+  await act(async () => root.render(null));
+  await render({ ...snapshot(), repoId: 'other' });
+  expect(container.textContent).not.toContain('Profile 2');
+  await click('Add profile');
+  await click('Add profile');
+  await act(async () => root.render(null));
+  await render();
+  expect(container.textContent).toContain('Profile 2');
+  expect(container.textContent).not.toContain('Profile 3');
+});
+it('keeps corrupt drafts untouched until explicit discard and handles unavailable storage', async () => {
+  sessionStorage.setItem(
+    'factory-workflow-draft:demo',
+    'sensitive invalid data',
+  );
+  await render();
+  await click('Add profile');
+  expect(container.textContent).toContain(
+    'Browser draft could not be restored',
+  );
+  expect(container.textContent).not.toContain('sensitive invalid data');
+  expect(sessionStorage.getItem('factory-workflow-draft:demo')).toBe(
+    'sensitive invalid data',
+  );
+  await click('Load saved settings');
+  expect(readWorkflowDraft('demo').status).toBe('missing');
+  vi.spyOn(Object.getPrototypeOf(sessionStorage), 'setItem').mockImplementation(
+    () => {
+      throw new Error('private storage details');
+    },
+  );
+  await click('Add profile');
+  expect(container.textContent).toContain(
+    'Browser storage is unavailable or full',
+  );
+  expect(container.textContent).not.toContain('private storage details');
+  expect(container.textContent).toContain('Profile 2');
 });

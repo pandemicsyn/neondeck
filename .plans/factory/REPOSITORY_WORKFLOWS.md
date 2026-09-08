@@ -141,6 +141,19 @@ The selected-workflow comment on #435 concerns its dependent UI integration in
 payload. An initial nondefault-profile regression verifies this behavior; the
 manager's final review covers the combined stack and exact approval capture.
 
+Further automated review found that workflow edits did not survive page reload.
+The editor now retains a bounded, versioned per-repository session draft,
+including its original base fingerprint, incomplete edits and selected profile.
+Successful save or explicit discard clears it. Storage failures are visible and
+stale restored settings still require reconciliation. Both independent reviewers
+cleared this correction; 98 tests across seven focused dashboard/API suites,
+root/web typechecks, lint and formatting pass.
+
+The environment-retry UI comment on #435 is covered by dependent #436: an
+explicit retry button submits the current pipeline version and operator reason
+to the typed retry endpoint. A regression confirms rendering does not retry and
+an explicit click submits that exact request.
+
 ## Verification record
 
 - PR feedback corrections passed `npm run check`: 320 test files and 3,503
