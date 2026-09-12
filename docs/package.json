@@ -13,12 +13,12 @@
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
-    "astro": "7.2.10",
+    "astro": "7.3.2",
     "cookie": "^2.0.1",
-    "mermaid": "^11.17.2"
+    "mermaid": "^12.0.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "wrangler": "^4.128.0"
+    "wrangler": "^4.131.0"
   }
 }
