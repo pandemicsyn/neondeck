@@ -1,4 +1,5 @@
 'use agent';
+import { assertFactoryEnabled } from '../runtime-home/features';
 import {
   defineTool,
   useDelivery,
@@ -34,6 +35,7 @@ function boundIntent(id: string, triage = false) {
   return intent;
 }
 export function FactoryPlanner({ id }: AgentProps) {
+  assertFactoryEnabled();
   const intent = boundIntent(id);
   useModel(intent.context.model, {
     thinkingLevel: intent.context.thinkingLevel,
@@ -110,6 +112,7 @@ export function FactoryPlanner({ id }: AgentProps) {
 FactoryPlanner.agentName = 'factory-planner';
 FactoryPlanner.durability = { maxAttempts: 2, timeoutMs: 180000 };
 export function FactoryTriage({ id }: AgentProps) {
+  assertFactoryEnabled();
   const intent = boundIntent(id, true);
   const [repairs, setRepairs] = usePersistentState('triage-repairs', 0);
   useModel(intent.context.utilityModel, {

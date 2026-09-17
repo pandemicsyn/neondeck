@@ -8,7 +8,7 @@ import {
   startUpdateCheckLoop,
   stopUpdateCheckLoop,
 } from '../modules/updates/loop';
-import type { RuntimePaths } from '../runtime-home';
+import { readFeatures, type RuntimePaths } from '../runtime-home';
 import { recoverFlueRuntimeServices } from './create-app';
 import { startSchedulerLoop, stopSchedulerLoop } from './scheduler-loop';
 import { startFactoryLinearLoop } from './factory-linear-loop';
@@ -22,6 +22,7 @@ export async function startManagedServices(
   app: Fetchable,
   ownCleanup: (stop: Stop) => void = () => {},
 ) {
+  const factoryEnabled = readFeatures(paths).factory;
   let stopped = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let recovery: Promise<void> | undefined;
@@ -76,10 +77,12 @@ export async function startManagedServices(
         refreshPrReviewRemoteState(paths).catch(() => undefined),
       );
     }
-    cleanup.add(startFactoryCodingLoop(paths));
-    cleanup.add(startFactoryDeliveryLoop(paths));
-    cleanup.add(startFactoryGitHubLoop(paths));
-    cleanup.add(startFactoryLinearLoop(paths));
+    if (factoryEnabled) {
+      cleanup.add(startFactoryCodingLoop(paths));
+      cleanup.add(startFactoryDeliveryLoop(paths));
+      cleanup.add(startFactoryGitHubLoop(paths));
+      cleanup.add(startFactoryLinearLoop(paths));
+    }
     recover();
     return stop;
   } catch (error) {
@@ -98,6 +101,7 @@ export async function startManagedServices(
     if (stopped) return;
     recovery = recoverFlueRuntimeServices({
       paths,
+      factoryEnabled,
       scheduler: false,
       readBriefingConversationHistory: async (id) => {
         const response = await app.fetch(

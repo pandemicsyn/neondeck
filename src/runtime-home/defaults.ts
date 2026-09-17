@@ -2,9 +2,16 @@ import { randomBytes } from 'node:crypto';
 
 import type { AppConfig, ResolvedLearningConfig } from './schemas.ts';
 
-export function defaultAppConfig(): AppConfig {
+export function defaultAppConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): AppConfig {
   return {
     version: 1,
+    features: {
+      factory: ['true', '1'].includes(
+        env.NEONDECK_FACTORY_ENABLED?.trim().toLowerCase() ?? '',
+      ),
+    },
     localApi: { token: generateLocalApiToken() },
     guardrails: {
       deniedFileGlobs: [],
