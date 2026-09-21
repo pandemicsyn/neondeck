@@ -1,5 +1,116 @@
 # Changelog
 
+## 1.0.0-beta.46
+
+### Minor Changes
+
+- [#416](https://github.com/pandemicsyn/neondeck/pull/416) [`8a66afd`](https://github.com/pandemicsyn/neondeck/commit/8a66afd8fe5be543f4b4d34e3b5ffb7dbd9a088d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add bounded local factory task timelines, worker and task health diagnosis, and read-only doctor commands with exact-preview redacted diagnostic exports.
+
+- [#401](https://github.com/pandemicsyn/neondeck/pull/401) [`a897aa0`](https://github.com/pandemicsyn/neondeck/commit/a897aa06dde6640ad8c8bf83b1683534d252ded5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Deliver retained factory candidates through an exact human grant, independent checks and model review, bounded Codex repairs, and recoverable draft PR publication. Reuse GitHub watches for feedback and human outcomes, and expose readable evidence, cumulative budgets, planning interventions and revocation in the workbench.
+
+- [#403](https://github.com/pandemicsyn/neondeck/pull/403) [`e636935`](https://github.com/pandemicsyn/neondeck/commit/e636935cfd0783592ae7ef74b9c41f3b9200cec1) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Assess repair progress before admitting another coding attempt. The read-only supervisor can continue, change the approach within the same bounded allowance, or escalate to explicit human planning. The delivery workbench shows assessed evidence, repair history, rationale and proposed next steps without refilling budgets or sending chat automatically.
+
+- [#392](https://github.com/pandemicsyn/neondeck/pull/392) [`29b22ce`](https://github.com/pandemicsyn/neondeck/commit/29b22ceeebe87dc3c71a0a995e05e1aecf7e3cb6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add durable provider-neutral coding run reservations, immutable provenance, fenced transitions and retained reconciliation evidence for the software factory.
+
+- [#406](https://github.com/pandemicsyn/neondeck/pull/406) [`9f3351e`](https://github.com/pandemicsyn/neondeck/commit/9f3351e92c10c293b42ef72ad78626ed22aad506) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add a shared coding CLI adapter host and generic factory admission contract while preserving Codex defaults. Bind releases to reviewed coding settings and pin executable identity through repairs, with private attempt state, bounded execution and retained recovery evidence.
+
+- [#394](https://github.com/pandemicsyn/neondeck/pull/394) [`0b776ff`](https://github.com/pandemicsyn/neondeck/commit/0b776ff6994b8d078aa550910ca143b61d643bbd) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add an opt-in factory coding backend that dispatches exact human releases into supervised local Codex worktrees, retains candidates for review, and exposes private status, cancellation, reconciliation and bounded evidence APIs. Protect factory-owned work from generic cleanup and mutation paths.
+
+- [#387](https://github.com/pandemicsyn/neondeck/pull/387) [`3a640fa`](https://github.com/pandemicsyn/neondeck/commit/3a640fa60ebdd179d5de1dbecf7b5f33c3925fe5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add opt-in factory GitHub status comments, exact human-approved public summaries and questions, durable uncertain-send recovery, and explicit remote-comment repair controls.
+
+- [#385](https://github.com/pandemicsyn/neondeck/pull/385) [`f11e0a3`](https://github.com/pandemicsyn/neondeck/commit/f11e0a3187831b560f137ce9c29555b9ffd408f1) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the Factory human shaping workbench with retained brief comparisons, revision-bound discussion, recoverable editors, decision answers, and exact-version release review.
+
+- [#408](https://github.com/pandemicsyn/neondeck/pull/408) [`f8f68aa`](https://github.com/pandemicsyn/neondeck/commit/f8f68aa0f745e22fde485cc3ceaa01e69bb1f3c6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the opt-in Kilo Code 7.4.23 factory adapter for Linux using native Kilo Gateway credentials. Use the shared execution host and private sessions, and reject incompatible legacy workspace configuration without deleting repository files.
+
+- [#420](https://github.com/pandemicsyn/neondeck/pull/420) [`736ad30`](https://github.com/pandemicsyn/neondeck/commit/736ad3020683be0711a6dcf6c4f798eeb8a84034) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Support explicitly selected file-backed local Codex logins for isolated factory coding attempts, preserve those references in the dashboard editor, and distinguish unperformed CLI probes from missing executables.
+
+- [#407](https://github.com/pandemicsyn/neondeck/pull/407) [`d491012`](https://github.com/pandemicsyn/neondeck/commit/d49101204b90de491a700798bce5535d5f3e60b6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the opt-in OpenCode 1.18.29 factory adapter for Linux, supporting selected native Zen, Anthropic and OpenAI API keys. Use the shared execution host with fresh private sessions, bounded event parsing and explicit compatibility checks.
+
+- [#418](https://github.com/pandemicsyn/neondeck/pull/418) [`51a5cae`](https://github.com/pandemicsyn/neondeck/commit/51a5caeae13ea830252bae0bd5effa787621e6d8) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add factory health, a paginated task timeline with correlation and retained evidence, and a local diagnostic JSON preview whose exact snapshot can be downloaded.
+
+- [#417](https://github.com/pandemicsyn/neondeck/pull/417) [`94bbc90`](https://github.com/pandemicsyn/neondeck/commit/94bbc908e94d44eb7d15c7eb4974ee5ab854b978) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Offer optional factory setup during init and a resumable factory setup command with configuration preview, preserved authority, and local adapter readiness.
+
+- [#430](https://github.com/pandemicsyn/neondeck/pull/430) [`384a13f`](https://github.com/pandemicsyn/neondeck/commit/384a13fd4d19e433d4d7854cab0c91c5f488b833) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Separate factory local validation from PR publication: approved work runs checks, independent review and bounded repairs before waiting for explicit draft-PR approval. Use one workflow with shared repair budgets and local validation independent of GitHub intake setup. Existing test releases require fresh approval to use the updated workflow.
+
+- [#386](https://github.com/pandemicsyn/neondeck/pull/386) [`b8637b1`](https://github.com/pandemicsyn/neondeck/commit/b8637b1446415975b4b173247194ebd9ba1cce54) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add signed GitHub issue intake, durable source and attributed-comment reconciliation,
+  and a separate webhook-only production listener with a private loopback dashboard.
+
+- [#423](https://github.com/pandemicsyn/neondeck/pull/423) [`1bae8bb`](https://github.com/pandemicsyn/neondeck/commit/1bae8bb8211254d52788220cd86cc815ab8e905c) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add opt-in Linear factory intake with explicit team/project repository mappings, signed webhook reconciliation, source provenance, and configured workflow-state writeback. Linear tasks reuse the existing shaping, human release, coding, and delivery flow.
+
+- [#415](https://github.com/pandemicsyn/neondeck/pull/415) [`a8a228c`](https://github.com/pandemicsyn/neondeck/commit/a8a228c5059feb97f83040c5bb33c26c00bdc856) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Retain bounded local factory operation spans with safe error classifications and correlated task identities. Persist worker lifecycle and heartbeat health for local diagnostics without changing execution authority or retry policy.
+
+- [#384](https://github.com/pandemicsyn/neondeck/pull/384) [`401459f`](https://github.com/pandemicsyn/neondeck/commit/401459f7414e52c86bc27b7670571c25f16244b6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Automatically triage admitted Factory tasks with the configured utility model, then shape a durable brief in a dedicated planning conversation. Add scoped read-only repository tools, model-authored revisions and questions, explicit context refresh, recoverable dispatch intents, and a chat/rendered-draft workbench. Human release authority and stale-editor protection remain unchanged.
+
+- [#383](https://github.com/pandemicsyn/neondeck/pull/383) [`31de722`](https://github.com/pandemicsyn/neondeck/commit/31de722a268992d09fe04d34f3add8498ca957c6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add opt-in local Factory intake with durable manual tasks, immutable draft revisions, and exact-version release, withdrawal and pause controls. The dashboard provides an inbox and draft editor; released work awaits a future coding executor and grants no publish, merge or deploy authority.
+
+- [#435](https://github.com/pandemicsyn/neondeck/pull/435) [`9869f5d`](https://github.com/pandemicsyn/neondeck/commit/9869f5dab35a1c51a40792c6c787cad1f03e0d96) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Configure named repository Factory workflows with reviewed setup and validation commands, runtime requirements, and environment variable references. Propose editable defaults from bounded committed repository evidence, test workflows independently, and bind selected workflows to Factory approvals and isolated validation.
+
+### Patch Changes
+
+- [#432](https://github.com/pandemicsyn/neondeck/pull/432) [`05313ce`](https://github.com/pandemicsyn/neondeck/commit/05313ce5ed3a37fc335995dfa575a33bbc17a36e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep failed factory validation and coding-readiness messages visible during polling. Show the validation blocker and precise PR review model configuration recovery beside plan approval, while preserving explicit review and release guards.
+
+- [#386](https://github.com/pandemicsyn/neondeck/pull/386) [`b8637b1`](https://github.com/pandemicsyn/neondeck/commit/b8637b1446415975b4b173247194ebd9ba1cce54) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Avoid rereading the runtime environment file when GitHub connection credentials are already available, and clarify that discussion pages follow first-retained order rather than GitHub timestamps.
+
+- [#429](https://github.com/pandemicsyn/neondeck/pull/429) [`52b9918`](https://github.com/pandemicsyn/neondeck/commit/52b9918422af377d4046d94813bede4b740b0eee) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep factory controls and drafts stable during background refreshes while preserving explicit refresh feedback, review requirements, and error guards.
+
+  Pause destructive writeback relinquish actions during receipt refreshes so a stale uncertain effect cannot relinquish a reconciled sent comment.
+
+- [#412](https://github.com/pandemicsyn/neondeck/pull/412) [`6bebbcc`](https://github.com/pandemicsyn/neondeck/commit/6bebbccc48de0333f52667462810734ee82b0d04) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep chat positioned correctly as content resizes, preserve newer drafts when a send finishes, and allow multiline messages to expand and scroll.
+
+- [#389](https://github.com/pandemicsyn/neondeck/pull/389) [`1304949`](https://github.com/pandemicsyn/neondeck/commit/13049498d457257626af80483d68e0aa8110ad68) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Harden factory persistence and API validation, preserve drafts after recovery errors, clarify module ownership, and make GitHub conditional caching and retry handling resilient to failed writes.
+
+- [#409](https://github.com/pandemicsyn/neondeck/pull/409) [`cc73e8e`](https://github.com/pandemicsyn/neondeck/commit/cc73e8e5881e997f170dee37e3aad61f81656256) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Use registered CLI metadata in factory setup and release controls. Show compatibility and authentication status separately, distinguish selected settings from pinned run identity, and bind release requests to the displayed configuration while retaining edits and disabling controls after failed refreshes.
+
+- [#427](https://github.com/pandemicsyn/neondeck/pull/427) [`da833d4`](https://github.com/pandemicsyn/neondeck/commit/da833d476a7aed32a5c90158d2b2e6eab1430d2b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Start factory coding, delivery and GitHub workers during local development after Flue initializes, and drain services on reload and shutdown without duplicating production workers.
+
+- [#421](https://github.com/pandemicsyn/neondeck/pull/421) [`8e35a0d`](https://github.com/pandemicsyn/neondeck/commit/8e35a0d8f59294cdfc14dbb5f611ab26daf8f137) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Guide factory setup with installed CLI detection, searchable coding models, Kilo Auto Frontier fallback, multiple GitHub intake repositories, and an explicit option to enable coding for human-released tasks.
+
+- [#387](https://github.com/pandemicsyn/neondeck/pull/387) [`3a640fa`](https://github.com/pandemicsyn/neondeck/commit/3a640fa60ebdd179d5de1dbecf7b5f33c3925fe5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Continue GitHub writeback recovery when source synchronization fails, while preserving sequential recovery and shutdown cancellation.
+
+- [#386](https://github.com/pandemicsyn/neondeck/pull/386) [`b8637b1`](https://github.com/pandemicsyn/neondeck/commit/b8637b1446415975b4b173247194ebd9ba1cce54) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Load managed factory listener settings from runtime home, preserve release authority through transient source reads, isolate invalid discovery content, support IPv6 local dashboard clients, and page issue discussion by task.
+
+- [#430](https://github.com/pandemicsyn/neondeck/pull/430) [`384a13f`](https://github.com/pandemicsyn/neondeck/commit/384a13fd4d19e433d4d7854cab0c91c5f488b833) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Guide factory tasks through planning, coding, validation, PR approval and feedback with visible next actions, precise blockers, and review evidence distinct from local comments.
+
+- [#417](https://github.com/pandemicsyn/neondeck/pull/417) [`94bbc90`](https://github.com/pandemicsyn/neondeck/commit/94bbc908e94d44eb7d15c7eb4974ee5ab854b978) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prompt for the coding CLI executable search PATH during factory setup so npm-installed CLIs can find their runtime before version checks and saving.
+
+- [#425](https://github.com/pandemicsyn/neondeck/pull/425) [`59c3334`](https://github.com/pandemicsyn/neondeck/commit/59c3334cf26a1fee2c9722a8d3889072e7aa436b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Make factory planning replies visibly multiline with a labeled editor, separate send controls, and context refresh beside the draft. Allow drafting while sending is gated, while preserving immutable request recovery and compact ordinary chat.
+
+  Explain release blockers beside the release button and let operators reveal retained local edits from compare mode without discarding them.
+
+- [#385](https://github.com/pandemicsyn/neondeck/pull/385) [`f11e0a3`](https://github.com/pandemicsyn/neondeck/commit/f11e0a3187831b560f137ce9c29555b9ffd408f1) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Retain exact planning request identities across lost responses and page reloads, with explicit recovery before sending another request.
+
+- [#387](https://github.com/pandemicsyn/neondeck/pull/387) [`3a640fa`](https://github.com/pandemicsyn/neondeck/commit/3a640fa60ebdd179d5de1dbecf7b5f33c3925fe5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Reject blank public approval bodies without altering approved text, and preserve human release when unchanged legacy GitHub comments gain numeric author identity.
+
+- [#389](https://github.com/pandemicsyn/neondeck/pull/389) [`1304949`](https://github.com/pandemicsyn/neondeck/commit/13049498d457257626af80483d68e0aa8110ad68) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Export retained factory drafts with Blob URLs so large drafts download reliably, and release the URLs when recovery data changes or recovery ends.
+
+- [#424](https://github.com/pandemicsyn/neondeck/pull/424) [`ae67f72`](https://github.com/pandemicsyn/neondeck/commit/ae67f726e62ae4fd0c4f592cfaab4454e7746279) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Capture the latest origin default branch for new factory planning and initial coding sessions without changing the user's checkout. Planning captures on the first human planner request after automatic triage and on explicit Refresh; coding captures independently when its initial attempt starts. Existing sessions and repair attempts retain their frozen revisions. Repositories without origin use the configured local default branch with explicit provenance; remote failures never fall back to stale local code.
+
+- [#428](https://github.com/pandemicsyn/neondeck/pull/428) [`815eb21`](https://github.com/pandemicsyn/neondeck/commit/815eb21ed3219bcf7cf702825f9d52b5fd764d90) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Stop injecting Neon's global runtime skills and support files into new factory coding contexts. Coding agents use repository-native skills while existing attempts and repairs retain their frozen context. Preserve the context budget and Neon's planning skill behavior.
+
+  Bind native repository skill discovery to newly reviewed release settings and frozen coding policies. Historical attempts and repairs retain legacy discovery; old queued releases require a fresh release before adopting the new policy.
+
+- [#386](https://github.com/pandemicsyn/neondeck/pull/386) [`b8637b1`](https://github.com/pandemicsyn/neondeck/commit/b8637b1446415975b4b173247194ebd9ba1cce54) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Expire settled GitHub delivery and superseded external-context queue history in bounded batches while preserving pending work, comment deduplication anchors and planning authority.
+
+- [#389](https://github.com/pandemicsyn/neondeck/pull/389) [`1304949`](https://github.com/pandemicsyn/neondeck/commit/13049498d457257626af80483d68e0aa8110ad68) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Correct the planning stop acknowledgement and prevent releasing factory tasks without a current repository fingerprint.
+
+- [#413](https://github.com/pandemicsyn/neondeck/pull/413) [`7bacb1f`](https://github.com/pandemicsyn/neondeck/commit/7bacb1fefefef98969d9dfdb49afae1dde52faae) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Make the factory inbox and chat scroll reliably, preserve drafts while shaping tasks and editing setup, and improve progress, evidence navigation and publishing history controls.
+
+- [#387](https://github.com/pandemicsyn/neondeck/pull/387) [`3a640fa`](https://github.com/pandemicsyn/neondeck/commit/3a640fa60ebdd179d5de1dbecf7b5f33c3925fe5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show GitHub writeback retry timing only for effects eligible for automatic recovery, preserving pending cooldowns while removing misleading timestamps from manually recovered and completed states. Disable failed-send retries when writeback consent is off, while keeping read-only uncertain receipt checks available.
+
+- [#389](https://github.com/pandemicsyn/neondeck/pull/389) [`1304949`](https://github.com/pandemicsyn/neondeck/commit/13049498d457257626af80483d68e0aa8110ad68) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Isolate GitHub cache invalidation by token and preserve newer conditional-read results when concurrent responses finish out of order.
+
+- [#436](https://github.com/pandemicsyn/neondeck/pull/436) [`72b97cf`](https://github.com/pandemicsyn/neondeck/commit/72b97cf67f55bf1b2a051dba4d2acd52bb1a4a61) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Use the frozen human-approved repository workflow in coding and repair prompts when it overrides the brief's proposed profile. Preserve the saved brief and approval hashes.
+
+- [#433](https://github.com/pandemicsyn/neondeck/pull/433) [`2578909`](https://github.com/pandemicsyn/neondeck/commit/25789095591e1e92249d83b2f90a77c4b1acc8ba) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Reuse unchanged tracked Git objects when freezing factory candidates so large existing assets do not consume changed-content limits. Report validation admission failures with safe cause-specific reasons and recovery guidance, preserve diagnostic references for unexpected failures, and fence explicit retries to the current released candidate.
+
+- [#386](https://github.com/pandemicsyn/neondeck/pull/386) [`b8637b1`](https://github.com/pandemicsyn/neondeck/commit/b8637b1446415975b4b173247194ebd9ba1cce54) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Resolve the production server entry correctly in paths containing spaces or escaped characters, and accurately identify GitHub connection and sync status loading errors.
+
+- [#428](https://github.com/pandemicsyn/neondeck/pull/428) [`815eb21`](https://github.com/pandemicsyn/neondeck/commit/815eb21ed3219bcf7cf702825f9d52b5fd764d90) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Restore repository-native skill discovery for factory Kilo and OpenCode runs without enabling project configuration or plugins. Keep Codex native discovery and isolated per-attempt credentials unchanged.
+
+- [#386](https://github.com/pandemicsyn/neondeck/pull/386) [`b8637b1`](https://github.com/pandemicsyn/neondeck/commit/b8637b1446415975b4b173247194ebd9ba1cce54) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Bound GitHub comment confirmation and planner-delivery lookups to one eligible comment from the current task, avoiding full-table JSON decoding during reconciliation.
+
+- [#389](https://github.com/pandemicsyn/neondeck/pull/389) [`1304949`](https://github.com/pandemicsyn/neondeck/commit/13049498d457257626af80483d68e0aa8110ad68) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Evict GitHub conditional-read cache entries after provider or network failures without removing newer successful results from concurrent reads.
+
 ## 1.0.0-beta.45
 
 ### Patch Changes
