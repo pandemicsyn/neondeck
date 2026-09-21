@@ -310,7 +310,7 @@ async function discoverRuntimeSkills(
     const entries = await readSkillRoot(root);
     for (const entry of entries.ignored) ignored.push(entry);
     for (const directory of entries.directories) {
-      const source = runtimeSkillSource(paths, root, directory);
+      const source = runtimeSkillSource(root);
       const candidate = await readSkillCandidate(directory, root, source);
       if (candidate.ok) {
         candidates.push(candidate.skill);
@@ -343,7 +343,7 @@ function discoverRuntimeSkillsSync(
     const entries = readSkillRootSync(root);
     for (const entry of entries.ignored) ignored.push(entry);
     for (const directory of entries.directories) {
-      const source = runtimeSkillSource(paths, root, directory);
+      const source = runtimeSkillSource(root);
       const candidate = readSkillCandidateSync(directory, root, source);
       if (candidate.ok) {
         candidates.push(candidate.skill);
@@ -625,11 +625,7 @@ function buildInventory(
   };
 }
 
-function runtimeSkillSource(
-  paths: RuntimePaths,
-  root: RuntimeSkillRoot,
-  _directory: string,
-): RuntimeSkillSource {
+function runtimeSkillSource(root: RuntimeSkillRoot): RuntimeSkillSource {
   if (root.source === 'external') return 'external';
   return 'user';
 }
