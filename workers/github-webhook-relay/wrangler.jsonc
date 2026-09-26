@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "neondeck-github-webhook-relay",
+  "main": "src/index.ts",
+  // Pinned to the newest date the installed wrangler's workerd supports
+  // (4.111.0 / workerd 1.20260710.1). Raise alongside a wrangler bump.
+  "compatibility_date": "2026-07-17",
+  "secrets": {
+    // GITHUB_WEBHOOK_SECRET_PREVIOUS is optional and intentionally omitted
+    // here: it enables overlap-window rotation (see README.md) and is set
+    // only while a rotation is in progress.
+    "required": ["GITHUB_WEBHOOK_SECRET", "WS_CLIENT_SECRET"],
+  },
+  "vars": {
+    "MAX_WEBHOOK_BYTES": 1048576,
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RELAY_ROOMS",
+        "class_name": "RelayRoom",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RelayRoom"],
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01,
+    },
+  },
+}
