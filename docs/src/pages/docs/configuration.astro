@@ -162,13 +162,14 @@ GITHUB_LOGIN=...</code></pre>
         <h3 id="google-vertex">Google Vertex AI Gemini</h3>
         <p>
           Use provider-qualified model ids such as
-          <code>google-vertex/gemini-3.6-flash</code>. Neondeck preserves Pi's
+          <code>google-vertex/gemini-2.5-flash</code>. Neondeck preserves Pi's
           native Vertex protocol and bundled Gemini metadata; setup searches
-          that installed catalog and recommends Gemini 3.6 Flash for the display
-          assistant and Explore role, plus Gemini 3.5 Flash-Lite for low-cost
-          utility work. This integration is for Gemini on Vertex AI. Other
-          Vertex Model Garden publishers are not treated as compatible models
-          without a validated Pi adapter.
+          that installed catalog and recommends Gemini 2.5 Flash for the display
+          assistant and Explore role, plus Gemini 2.5 Flash-Lite for low-cost
+          utility work. Newer Gemini 3 models remain selectable. This
+          integration is for Gemini on Vertex AI. Other Vertex Model Garden
+          publishers are not treated as compatible models without a validated Pi
+          adapter.
         </p>
         <p>
           Credentials stay in the runtime-home <code>.env</code>, never in
