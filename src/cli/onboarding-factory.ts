@@ -7,7 +7,7 @@ import {
   MAX_FACTORY_GITHUB_CONNECTIONS,
 } from '../../shared/factory';
 import { readFactoryGitHubRepository } from '../modules/github';
-import type { RuntimePaths } from '../runtime-home';
+import { readFeatures, type RuntimePaths } from '../runtime-home';
 import { connectionReadiness } from '../modules/factory/github-config';
 import { loadEnvForPaths } from './options';
 import {
@@ -27,6 +27,7 @@ import {
 } from './onboarding-factory-coding';
 
 export async function configureFactory(paths: RuntimePaths) {
+  if (!readFeatures(paths).factory) return;
   await configureFactoryWorkflows(paths);
   if (
     !(await promptConfirm({

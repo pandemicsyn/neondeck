@@ -20,18 +20,6 @@ import './factory.css';
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Request failed. Please retry.';
-export function FactoryNav() {
-  const state = useQuery({
-    queryKey: ['factory-state'],
-    queryFn: getFactoryState,
-    refetchInterval: 30000,
-  });
-  return state.data?.enabled ? (
-    <a className="factory-nav" href="/factory">
-      Factory inbox
-    </a>
-  ) : null;
-}
 export function FactoryPage() {
   const client = useQueryClient();
   const [id, setId] = useState<string | null>(() =>

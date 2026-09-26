@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, it } from 'vitest';
@@ -70,6 +70,7 @@ it('runs real Flue triage and a persistent planner with a deterministic test pro
     paths.config,
     JSON.stringify({
       version: 1,
+      features: { factory: true },
       factory: { enabled: true },
       models: { default: 'faux/faux-1', utility: 'faux/faux-1' },
     }),
@@ -251,6 +252,7 @@ it.each([
       paths.config,
       JSON.stringify({
         version: 1,
+        features: { factory: true },
         factory: { enabled: true },
         models: { default: 'faux/faux-1' },
       }),
@@ -376,6 +378,7 @@ it('exhausts a finite invalid-tool triage budget into an inspectable retryable f
     paths.config,
     JSON.stringify({
       version: 1,
+      features: { factory: true },
       factory: { enabled: true },
       models: { default: 'faux/faux-1' },
     }),
@@ -443,6 +446,11 @@ it('delivers attributed GitHub context without tools and reconciles a lost recei
   const { prepareGitHubContext, getPlanningIntent } =
     await import('./modules/factory/planning-store');
   const setup = fixture(true);
+  const config = JSON.parse(readFileSync(setup.paths.config, 'utf8'));
+  writeFileSync(
+    setup.paths.config,
+    JSON.stringify({ ...config, features: { factory: true } }),
+  );
   const oldHome = process.env.NEONDECK_HOME;
   process.env.NEONDECK_HOME = setup.paths.home;
   let flue: Awaited<ReturnType<typeof start>> | undefined;

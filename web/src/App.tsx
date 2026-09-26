@@ -1,4 +1,4 @@
-import { FactoryNav, FactoryPage } from './features/factory/FactoryPage';
+import { FactoryNav, FactoryPage } from './features/factory-entry';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   lazy,

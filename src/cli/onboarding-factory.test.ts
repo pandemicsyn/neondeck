@@ -1,3 +1,4 @@
+import { configureFactoryWorkflows } from './onboarding-factory-workflows';
 vi.mock('./onboarding-factory-workflows', () => ({
   configureFactoryWorkflows: vi.fn().mockResolvedValue(undefined),
 }));
@@ -53,13 +54,31 @@ async function fixture() {
   homes.push(home);
   const paths = runtimePaths(home);
   await ensureRuntimeHome(paths);
+  const config = JSON.parse(await readFile(paths.config, 'utf8'));
+  await writeFile(
+    paths.config,
+    JSON.stringify({ ...config, features: { factory: true } }),
+  );
   return paths;
 }
-it('skips without even reading or preparing a missing runtime home', async () => {
-  vi.mocked(promptConfirm).mockResolvedValue(false);
-  await expect(
-    configureFactory(runtimePaths('/nonexistent/factory-onboarding')),
-  ).resolves.toBeUndefined();
+it('hides all factory onboarding when the feature is disabled', async () => {
+  const paths = await fixture();
+  const config = JSON.parse(await readFile(paths.config, 'utf8'));
+  await writeFile(
+    paths.config,
+    JSON.stringify({
+      ...config,
+      features: { factory: false },
+      factory: { enabled: true },
+    }),
+  );
+  const before = await readFile(paths.config, 'utf8');
+  await configureFactory(paths);
+  expect(promptConfirm).not.toHaveBeenCalled();
+  expect(promptSelect).not.toHaveBeenCalled();
+  expect(configureFactoryWorkflows).not.toHaveBeenCalled();
+  expect(log.info).not.toHaveBeenCalled();
+  expect(await readFile(paths.config, 'utf8')).toBe(before);
 });
 it('retains unrelated configuration and existing coding authority when resumed', async () => {
   const paths = await fixture();
