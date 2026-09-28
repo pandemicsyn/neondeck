@@ -111,13 +111,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           classic PAT access.
         </p>
         <aside class="docs-note">
-          <strong>Fine-grained PAT limitation:</strong> GitHub's fine-grained token
-          settings do not currently expose the Checks permission required by the check-runs
-          and check-suites APIs. Actions and Workflows read access do not grant that
-          permission. Neondeck continues PR reviews without check data when those
-          endpoints return the corresponding 403, but features that specifically require
-          complete CI facts still need a classic PAT or a GitHub App with Checks read
-          access.
+          <strong>Fine-grained PATs:</strong> To include CI facts in private-repository
+          PR reviews, grant the token repository <strong>Checks: Read</strong> access.
+          Actions and Workflows read access does not substitute for the Checks permission.
+          Neondeck continues PR reviews without check data when the Checks endpoints return
+          a corresponding 403, but features that specifically require complete CI facts need
+          a token with Checks read access.
         </aside>
 
         <h2>4. Start Neondeck</h2>
