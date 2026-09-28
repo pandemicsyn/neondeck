@@ -1,0 +1,41 @@
+name: Worker checks (github-webhook-relay)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'workers/github-webhook-relay/**'
+      - '.github/workflows/worker-github-webhook-relay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-github-webhook-relay-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check github-webhook-relay
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: workers/github-webhook-relay/package-lock.json
+
+      - name: Install dependencies
+        working-directory: workers/github-webhook-relay
+        run: npm ci
+
+      - name: Run checks
+        working-directory: workers/github-webhook-relay
+        run: npm run check
