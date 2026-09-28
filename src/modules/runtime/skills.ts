@@ -118,7 +118,7 @@ export function resolveApplicationSkillPaths(moduleUrl = import.meta.url) {
 export async function listRuntimeSkills(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const roots = await runtimeSkillRootsSafe(paths);
-  return discoverRuntimeSkills(paths, roots.roots, roots.ignored);
+  return discoverRuntimeSkills(roots.roots, roots.ignored);
 }
 
 export async function loadRuntimeSkill(
@@ -173,11 +173,7 @@ export function runtimeSkillReferencesSync(
 ): SkillDefinition[] {
   ensureRuntimeHomeSync(paths);
   const roots = runtimeSkillRootsSafeSync(paths);
-  const inventory = discoverRuntimeSkillsSync(
-    paths,
-    roots.roots,
-    roots.ignored,
-  );
+  const inventory = discoverRuntimeSkillsSync(roots.roots, roots.ignored);
   return inventory.skills
     .filter(
       (skill) =>
@@ -193,11 +189,7 @@ export function runtimeSkillSessionSnapshotsSync(
 ): RuntimeSkillSessionSnapshot[] {
   ensureRuntimeHomeSync(paths);
   const roots = runtimeSkillRootsSafeSync(paths);
-  const inventory = discoverRuntimeSkillsSync(
-    paths,
-    roots.roots,
-    roots.ignored,
-  );
+  const inventory = discoverRuntimeSkillsSync(roots.roots, roots.ignored);
   return inventory.skills
     .filter(
       (skill) =>
@@ -232,11 +224,7 @@ export function runtimeSkillReferenceByIdSync(
 ): SkillDefinition | undefined {
   ensureRuntimeHomeSync(paths);
   const roots = runtimeSkillRootsSafeSync(paths);
-  const inventory = discoverRuntimeSkillsSync(
-    paths,
-    roots.roots,
-    roots.ignored,
-  );
+  const inventory = discoverRuntimeSkillsSync(roots.roots, roots.ignored);
   const skill = inventory.skills.find(
     (candidate) => candidate.id === id && candidate.status === 'active',
   );
@@ -292,7 +280,6 @@ function buildRuntimeSkillRoots(paths: RuntimePaths, externalRoots: string[]) {
 }
 
 async function discoverRuntimeSkills(
-  paths: RuntimePaths,
   roots: RuntimeSkillRoot[],
   initialIgnored: IgnoredRuntimeSkill[] = [],
 ): Promise<RuntimeSkillInventory> {
@@ -324,7 +311,6 @@ async function discoverRuntimeSkills(
 }
 
 function discoverRuntimeSkillsSync(
-  paths: RuntimePaths,
   roots: RuntimeSkillRoot[],
   initialIgnored: IgnoredRuntimeSkill[] = [],
 ) {
