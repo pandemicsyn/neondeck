@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { runtimePaths } from '../runtime-home';
+import { readFeatures, runtimePaths } from '../runtime-home';
 import { createDevServiceOwner } from './dev-service-owner';
 import type { LoadedFlueNodeApplication } from '@flue/vite';
 import { startManagedServices } from './managed-services';
@@ -18,6 +18,10 @@ const effects = vi.hoisted(() => ({
   updateStop: vi.fn<() => void>(),
   schedulerStop: vi.fn<() => Promise<void>>(async () => {}),
   mcpStop: vi.fn<() => Promise<void>>(async () => {}),
+}));
+vi.mock('../runtime-home', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../runtime-home')>()),
+  readFeatures: vi.fn<() => { factory: boolean }>(() => ({ factory: true })),
 }));
 vi.mock('./factory-coding-loop', () => ({
   startFactoryCodingLoop: (...args: unknown[]) => {
@@ -65,6 +69,7 @@ vi.mock('../modules/pr-reviews', () => ({
 }));
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(readFeatures).mockReturnValue({ factory: true });
   effects.recover.mockResolvedValue();
 });
 afterEach(() => {
@@ -223,4 +228,34 @@ it('retains failed rollback ownership and retries only failed cleanup before any
   expect(effects.codingStop).toHaveBeenCalledTimes(3);
   expect(effects.coding).toHaveBeenCalledTimes(2);
   await replacement.stop();
+});
+
+it('does not start factory workers when the feature is disabled', async () => {
+  vi.mocked(readFeatures).mockReturnValue({ factory: false });
+  const stop = await startManagedServices(
+    runtimePaths('/tmp/mocked-factory-disabled'),
+    {
+      fetch: async () => new Response(),
+    },
+  );
+  for (const start of [
+    effects.coding,
+    effects.delivery,
+    effects.github,
+    effects.linear,
+  ])
+    expect(start).not.toHaveBeenCalled();
+  expect(effects.recover).toHaveBeenCalledWith(
+    expect.objectContaining({ factoryEnabled: false }),
+  );
+  expect(effects.mcpStart).toHaveBeenCalledOnce();
+  await stop();
+  for (const drain of [
+    effects.codingStop,
+    effects.deliveryStop,
+    effects.githubStop,
+    effects.linearStop,
+  ])
+    expect(drain).not.toHaveBeenCalled();
+  expect(effects.mcpStop).toHaveBeenCalledOnce();
 });

@@ -1,7 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
+import { runtimePaths } from '../runtime-home';
 import {
   fauxProvider,
   fauxAssistantMessage,
@@ -36,6 +37,10 @@ it.each([
   async (mode) => {
     const root = await mkdtemp(join(tmpdir(), 'factory-progress-flue-'));
     vi.stubEnv('NEONDECK_HOME', root);
+    await writeFile(
+      runtimePaths(root).config,
+      JSON.stringify({ version: 1, features: { factory: true } }),
+    );
     const revision = {
       runId: 'run',
       attemptId: 'attempt',

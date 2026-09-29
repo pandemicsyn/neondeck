@@ -69,6 +69,7 @@ it('probes an env-node wrapper, saves and reuses explicit settings without ambie
   const home = await mkdtemp(join(tmpdir(), 'onboarding-path-'));
   homes.push(home);
   const paths = runtimePaths(join(home, 'runtime'));
+  vi.stubEnv('NEONDECK_FACTORY_ENABLED', 'true');
   await ensureRuntimeHome(paths);
   const bin = join(home, 'node-bin');
   await mkdir(bin);

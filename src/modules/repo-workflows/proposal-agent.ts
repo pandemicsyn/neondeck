@@ -1,4 +1,5 @@
 'use agent';
+import { assertFactoryEnabled } from '../../runtime-home/features';
 import {
   defineTool,
   useModel,
@@ -21,6 +22,7 @@ const inputSchema = v.strictObject({
   ),
 });
 export function RepoWorkflowProposer() {
+  assertFactoryEnabled();
   const input = v.parse(inputSchema, useInitialData());
   useModel(input.model, { compaction: false });
   const write = useDataWriter('repoWorkflowProposal', {

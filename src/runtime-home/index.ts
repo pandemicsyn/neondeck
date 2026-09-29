@@ -1,3 +1,4 @@
+export { readFeatures, resolveFeatures } from './features';
 export { generateLocalApiToken, resolveLearningConfig } from './defaults.ts';
 export * from './autopilot-prompts.ts';
 export * from './pr-review-prompts.ts';

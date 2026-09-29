@@ -6,7 +6,9 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { expect, it } from 'vitest';
+import { expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { runtimePaths } from './runtime-home';
+
 import {
   fauxProvider,
   fauxAssistantMessage,
@@ -17,6 +19,20 @@ import { dispatch, init } from '@flue/runtime';
 import { FactoryReviewer } from './agents/factory-reviewer';
 import { validateReviewerReply } from './modules/factory-delivery/reviewer';
 import type { CandidateReviewRequest } from './modules/factory-delivery/reviewer-contract';
+let runtimeHome: string;
+beforeEach(async () => {
+  runtimeHome = await mkdtemp(join(tmpdir(), 'reviewer-feature-'));
+  vi.stubEnv('NEONDECK_HOME', runtimeHome);
+  await writeFile(
+    runtimePaths(runtimeHome).config,
+    JSON.stringify({ version: 1, features: { factory: true } }),
+  );
+});
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await rm(runtimeHome, { recursive: true, force: true });
+});
+
 it.each(['complete', 'missing-diff', 'failed-read'] as const)(
   'settles real bounded Flue reviewer: %s',
   async (mode) => {

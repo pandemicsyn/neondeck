@@ -448,6 +448,9 @@ export const serverConfigSchema = v.strictObject({
 
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
+  features: v.optional(
+    v.strictObject({ factory: v.optional(v.boolean(), false) }),
+  ),
   factory: v.optional(factoryConfigSchema),
   localApi: v.optional(localApiConfigSchema),
   server: v.optional(serverConfigSchema),

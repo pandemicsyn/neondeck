@@ -98,6 +98,13 @@ factoryCommand
   .description('Resume optional local factory setup.')
   .action(async () => {
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    const { readFeatures } = await runtimeHomeModule();
+    if (!readFeatures(paths).factory) {
+      console.info(
+        'Factory is disabled. Set features.factory to true in config.json, then restart Neondeck.',
+      );
+      return;
+    }
     await configureFactory(paths);
   });
 

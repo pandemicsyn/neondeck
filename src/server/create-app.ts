@@ -27,6 +27,8 @@ import { getMcpRegistry } from '../domains/mcp';
 import { installFlueExecutionContextTracker } from '../modules/flue/execution-context';
 import { installNeondeckProviders } from '../modules/repos';
 import {
+  readFeatures,
+  resolveFeatures,
   ensureRuntimeHome,
   ensureRuntimeHomeSync,
   type RuntimePaths,
@@ -101,6 +103,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   ensureRuntimeHomeSync(paths);
   const appConfig = await installNeondeckProviders(paths);
 
+  const features = resolveFeatures(appConfig);
   const app = new Hono();
   const staticRoot = options.staticRoot ?? resolveStaticRoot();
 
@@ -142,6 +145,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.use('/api/*', requireAppAccess);
   app.use('/reports/*', requireAppAccess);
 
+  app.get('/api/features', (c) => c.json(features));
   app.route('/api', createRuntimeRoutes(paths));
   app.route(
     dashboardEventStreamPath,
@@ -158,10 +162,15 @@ export async function createApp(options: CreateAppOptions = {}) {
         : {},
     ),
   );
-  app.route('/api/factory/diagnostics', createFactoryDiagnosticsRoutes(paths));
-  app.route('/api/factory/coding', createFactoryCodingRoutes(paths));
-  app.route('/api/factory-delivery', createFactoryDeliveryRoutes(paths));
-  app.route('/api/factory', createFactoryRoutes(paths));
+  if (features.factory) {
+    app.route(
+      '/api/factory/diagnostics',
+      createFactoryDiagnosticsRoutes(paths),
+    );
+    app.route('/api/factory/coding', createFactoryCodingRoutes(paths));
+    app.route('/api/factory-delivery', createFactoryDeliveryRoutes(paths));
+    app.route('/api/factory', createFactoryRoutes(paths));
+  }
   app.route('/api/safety', createSafetyRoutes(paths));
   app.route('/api/execution', createExecutionRoutes(paths));
   app.route('/api', createSessionRoutes(paths));
@@ -174,8 +183,10 @@ export async function createApp(options: CreateAppOptions = {}) {
     }),
   );
   app.route('/api/repos', createReposRoutes(paths));
-  app.route('/api', createRepoWorkflowsRoutes(paths));
-  app.route('/api', createRepoWorkflowRunsRoutes(paths));
+  if (features.factory) {
+    app.route('/api', createRepoWorkflowsRoutes(paths));
+    app.route('/api', createRepoWorkflowRunsRoutes(paths));
+  }
   app.route('/api', createRepoEditRoutes(paths));
   app.route('/api', createWorktreeRoutes(paths));
   app.route('/api/kilo', createKiloRoutes(paths));
@@ -199,10 +210,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createReviewSurfaceRoutes());
   app.route('/api/github', createGitHubRoutes(paths));
 
-  app.route(
-    '/api/flue/agents/factory-planner',
-    createFactoryPlannerRoutes(paths),
-  );
+  if (features.factory) {
+    app.route(
+      '/api/flue/agents/factory-planner',
+      createFactoryPlannerRoutes(paths),
+    );
+  }
   app.use('/api/flue/agents/display-assistant/*', async (c, next) => {
     const segment = decodeURIComponent(c.req.path.split('/')[5] ?? '');
     if (segment.startsWith('factory-'))
@@ -245,6 +258,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     startUpdateCheckLoop(paths);
     const startRuntimeServices = createFlueRuntimeServiceStarter({
       paths,
+      factoryEnabled: features.factory,
       scheduler: options.scheduler !== false,
       readBriefingConversationHistory,
     });
@@ -323,6 +337,7 @@ async function startRuntimeServicesWhenAvailable(start: () => void) {
 
 type FlueRuntimeServiceInput = {
   paths: RuntimePaths;
+  factoryEnabled?: boolean;
   scheduler: boolean;
   readBriefingConversationHistory: (
     sessionId: string,
@@ -346,11 +361,13 @@ export async function recoverFlueRuntimeServices(
   input: FlueRuntimeServiceInput,
 ) {
   const failures: Error[] = [];
-  await captureRuntimeStartupFailure(
-    'Factory planning recovery',
-    failures,
-    async () => recoverFactoryPlanning(input.paths),
-  );
+  if (input.factoryEnabled ?? readFeatures(input.paths).factory) {
+    await captureRuntimeStartupFailure(
+      'Factory planning recovery',
+      failures,
+      async () => recoverFactoryPlanning(input.paths),
+    );
+  }
   await captureRuntimeStartupFailure(
     'PR review submission follow-up recovery',
     failures,

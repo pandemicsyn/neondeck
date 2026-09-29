@@ -1,4 +1,5 @@
 'use agent';
+import { assertFactoryEnabled } from '../runtime-home/features';
 import {
   defineTool,
   useModel,
@@ -34,6 +35,7 @@ function publicPath(path: string) {
   );
 }
 export function FactoryReviewer({ id }: AgentProps) {
+  assertFactoryEnabled();
   const request = useInitialData<CandidateReviewRequest>();
   validateReviewerChecks(request);
   if (Date.now() >= request.deadlineAt)

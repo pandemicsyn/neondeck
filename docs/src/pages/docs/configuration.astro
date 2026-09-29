@@ -54,6 +54,30 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Neondeck.
         </p>
 
+        <h2 id="factory-feature">Factory feature flag</h2>
+        <p>
+          Factory is off by default. For a new runtime home, run
+          <code>NEONDECK_FACTORY_ENABLED=true neondeck init</code> (or
+          <code>NEONDECK_FACTORY_ENABLED=true npm run init</code> from source). Initialization
+          saves this choice in <code>config.json</code>. The environment
+          variable only seeds a new config; it never overrides an existing file.
+        </p>
+        <p>
+          After initialization, stop Neondeck and merge this block into the
+          existing
+          <code>config.json</code>, then restart. Use <code>false</code> to disable
+          it:
+        </p>
+        <pre><code>{JSON.stringify({ features: { factory: true } }, null, 2)}</code></pre>
+        <p>
+          Disabled homes skip factory onboarding, hide Factory navigation, and
+          do not mount factory APIs or start factory planning recovery, coding,
+          delivery, source polling, or the public webhook listener. Existing
+          homes without this flag also default to off. Records and settings are
+          retained. This flag is separate from <code>factory.enabled</code> (intake)
+          and coding/publication permissions; re-enabling restores those saved settings.
+        </p>
+
         <h2>Secrets</h2>
         <p>
           Packaged and local app secrets live in runtime-home <code>.env</code>.

@@ -24,6 +24,7 @@ it.each([true, false])(
         paths.config,
         JSON.stringify({
           version: 1,
+          features: { factory: true },
           factory: { enabled },
           models: { default: 'faux/faux-1' },
         }),

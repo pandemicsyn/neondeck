@@ -31,6 +31,27 @@ mutable state stored in SQLite under a runtime home you control.
 
 ## Factory intake, coding and delivery
 
+Factory is disabled by default, including for existing homes without the feature
+flag. To opt in when creating a runtime home:
+
+```sh
+NEONDECK_FACTORY_ENABLED=true neondeck init
+# From a source checkout:
+NEONDECK_FACTORY_ENABLED=true npm run init
+```
+
+Initialization saves the flag in runtime-home `config.json`. After initialization,
+merge `"features": { "factory": true }` into that file and restart Neondeck to
+enable Factory, or set it to `false` and restart to disable it. The environment
+variable seeds new config only; it never overrides an existing config. `1` is
+also accepted as an opt-in value.
+
+When disabled, factory onboarding, navigation, APIs, planning recovery, coding,
+delivery, source polling and the public webhook listener stay off. Existing
+factory records and settings are retained. The feature flag is separate from
+`factory.enabled` (intake) and the coding/publication permissions below. Re-enabling
+restores those saved settings; stop Neondeck before changing the flag.
+
 Repository workflows define the setup and validation commands a factory task
 needs, including commands in nested packages. Configure named profiles in
 Factory setup or optional CLI onboarding, then explicitly test a saved profile

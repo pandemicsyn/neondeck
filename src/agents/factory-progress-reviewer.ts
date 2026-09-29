@@ -1,4 +1,5 @@
 'use agent';
+import { assertFactoryEnabled } from '../runtime-home/features';
 import '../modules/factory-delivery/progress-reviewer-admission';
 import {
   defineTool,
@@ -25,6 +26,7 @@ import {
   progressEvidenceRefs,
 } from '../modules/factory-delivery/progress-evidence-contract';
 export function FactoryProgressReviewer({ id }: AgentProps) {
+  assertFactoryEnabled();
   const request = validateProgressRequest(useInitialData());
   const delivery = useDelivery();
   const assertTime = () => {

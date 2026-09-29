@@ -4,7 +4,7 @@ import { createGitHubIngress } from './github-ingress';
 import { listenerConfig, startNeondeckListeners } from './listeners';
 import { startManagedServices } from './managed-services';
 import { getMcpRegistry } from '../domains/mcp';
-import { runtimePaths } from '../runtime-home';
+import { readFeatures, runtimePaths } from '../runtime-home';
 import { loadNeondeckEnv } from '../modules/runtime/env';
 const paths = runtimePaths();
 loadNeondeckEnv(paths, { includeDevFallback: false });
@@ -12,6 +12,7 @@ const config = listenerConfig();
 process.env.NEONDECK_MANAGED_HOST = '1';
 const { loadFlueNodeApplication } = await import('virtual:flue/server');
 const application = await loadFlueNodeApplication();
+if (!readFeatures(paths).factory) config.publicPort = null;
 let stopSources = () => getMcpRegistry(paths).stop();
 const lifecycle = await startNeondeckListeners(
   application,
