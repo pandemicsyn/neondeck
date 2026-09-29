@@ -60,25 +60,29 @@ type KiloRawModel = {
 const kiloApiBase = 'https://api.kilo.ai';
 const kiloFetchTimeoutMs = 10_000;
 const googleVertexRecommendations = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
   'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
   'gemini-2.5-pro',
 ] as const;
 const googleVertexRoleRecommendations: Record<
   GatewayModelRole,
   readonly (typeof googleVertexRecommendations)[number][]
 > = {
-  displayAssistant: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-pro'],
+  displayAssistant: [
+    'gemini-2.5-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+  ],
   utility: [
+    'gemini-2.5-flash-lite',
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
-    'gemini-2.5-flash-lite',
   ],
-  explore: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'],
+  explore: ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'],
 };
 
 export async function discoverModels(input: {
