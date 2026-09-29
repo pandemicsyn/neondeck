@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Functional assessment of Neondeck PR Autopilot using a disposable live GitHub pull request and an isolated runtime."
+    />
+    <title>Neondeck Autopilot Functional Test Assessment</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #090b10;
+        --panel: #0e1219;
+        --panel-2: #121824;
+        --line: #263143;
+        --ink: #e3f7ff;
+        --muted: #93a9b7;
+        --cyan: #66e3ff;
+        --teal: #31d3b0;
+        --pink: #ff5faf;
+        --amber: #ffc66d;
+        --red: #ff7280;
+        --max: 1220px;
+        --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+        --sans:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgb(102 227 255 / 4%), transparent 35%),
+          linear-gradient(315deg, rgb(255 95 175 / 4%), transparent 30%),
+          var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      a {
+        color: var(--cyan);
+        text-underline-offset: 0.18em;
+      }
+
+      a:hover {
+        color: var(--ink);
+      }
+
+      code,
+      .mono {
+        font-family: var(--mono);
+      }
+
+      code {
+        color: var(--cyan);
+        overflow-wrap: anywhere;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 15ch;
+        margin-bottom: 18px;
+        font-size: clamp(2.3rem, 6vw, 5rem);
+        line-height: 0.95;
+        letter-spacing: -0.045em;
+      }
+
+      h2 {
+        margin-bottom: 18px;
+        font-size: 1.7rem;
+        letter-spacing: -0.02em;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 1.05rem;
+      }
+
+      p,
+      li {
+        max-width: 82ch;
+      }
+
+      ul,
+      ol {
+        margin: 0;
+        padding-left: 1.25rem;
+      }
+
+      li + li {
+        margin-top: 7px;
+      }
+
+      .shell {
+        width: min(var(--max), calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .hero {
+        border-bottom: 1px solid var(--line);
+        padding: 64px 0 42px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(290px, 0.55fr);
+        gap: 40px;
+        align-items: end;
+      }
+
+      .kicker,
+      .eyebrow,
+      .pill,
+      th {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.085em;
+        text-transform: uppercase;
+      }
+
+      .kicker {
+        margin-bottom: 18px;
+        color: var(--cyan);
+      }
+
+      .lede {
+        max-width: 72ch;
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 1.08rem;
+      }
+
+      .verdict {
+        border: 1px solid rgb(255 198 109 / 55%);
+        background: rgb(255 198 109 / 8%);
+        padding: 22px;
+      }
+
+      .verdict strong {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .verdict p {
+        margin-bottom: 0;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 24px;
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        padding: 5px 9px;
+        color: var(--muted);
+      }
+
+      main {
+        padding: 46px 0 80px;
+      }
+
+      section {
+        padding: 34px 0;
+      }
+
+      section + section {
+        border-top: 1px solid var(--line);
+      }
+
+      .summary-grid,
+      .card-grid,
+      .two-col {
+        display: grid;
+        gap: 16px;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .card-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .two-col {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      .card,
+      .metric,
+      .callout,
+      .step {
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .metric {
+        padding: 18px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 1.2rem;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      .card {
+        padding: 22px;
+      }
+
+      .card p:last-child,
+      .callout p:last-child {
+        margin-bottom: 0;
+      }
+
+      .callout {
+        border-color: rgb(102 227 255 / 36%);
+        padding: 20px 22px;
+      }
+
+      .callout.answer {
+        border-color: rgb(49 211 176 / 42%);
+        background: rgb(49 211 176 / 7%);
+      }
+
+      .callout.warning {
+        border-color: rgb(255 198 109 / 42%);
+        background: rgb(255 198 109 / 7%);
+      }
+
+      .callout.danger {
+        border-color: rgb(255 114 128 / 42%);
+        background: rgb(255 114 128 / 7%);
+      }
+
+      .steps {
+        display: grid;
+        gap: 12px;
+      }
+
+      .step {
+        padding: 18px;
+      }
+
+      .step h3 {
+        color: var(--cyan);
+      }
+
+      .step p {
+        margin-bottom: 0;
+        color: var(--muted);
+      }
+
+      .status {
+        display: inline-flex;
+        min-width: 64px;
+        justify-content: center;
+        border: 1px solid currentcolor;
+        padding: 2px 7px;
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .pass {
+        color: var(--teal);
+      }
+
+      .partial {
+        color: var(--amber);
+      }
+
+      .fail {
+        color: var(--red);
+      }
+
+      .note {
+        color: var(--cyan);
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--panel);
+      }
+
+      th,
+      td {
+        padding: 13px 15px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .finding {
+        display: grid;
+        grid-template-columns: 78px minmax(0, 1fr);
+        gap: 16px;
+        border-top: 1px solid var(--line);
+        padding: 20px 0;
+      }
+
+      .finding:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .priority {
+        align-self: start;
+        border: 1px solid currentcolor;
+        padding: 5px 7px;
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .finding p {
+        margin-bottom: 0;
+        color: var(--muted);
+      }
+
+      .sequence {
+        margin-top: 16px;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        padding: 18px;
+        overflow-x: auto;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.8;
+        white-space: pre;
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 28px 0 40px;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      @media (max-width: 900px) {
+        .hero-grid,
+        .summary-grid,
+        .card-grid,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+
+        .summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 560px) {
+        .summary-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .finding {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="shell hero-grid">
+        <div>
+          <p class="kicker">Functional research · live disposable PR</p>
+          <h1>Autopilot worked, but acceptance is not complete.</h1>
+          <p class="lede">
+            This report records a live end-to-end test of Neondeck PR Autopilot
+            against a disposable GitHub pull request, using an isolated runtime
+            home and the configured Kilo provider.
+          </p>
+          <div class="meta">
+            <span class="pill">PR #176</span>
+            <span class="pill">closed · unmerged</span>
+            <span class="pill">isolated runtime</span>
+            <span class="pill">2026-07-21 UTC</span>
+          </div>
+        </div>
+        <aside class="verdict">
+          <strong>Assessment</strong>
+          <p>
+            The core owner, approval, safe-push, idempotency, restart, and
+            cleanup paths are real. Four behavioral defects and one
+            configuration-chat reliability problem should be fixed before
+            calling the feature fully production-ready.
+          </p>
+        </aside>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="approval-answer">
+        <p class="eyebrow">Direct answer</p>
+        <h2>How the first change was approved</h2>
+        <div class="callout answer">
+          <h3>Approval was sent through the Active Watches UI.</h3>
+          <p>
+            After the watch reached <code>waiting</code>, I used the watch
+            card’s embedded owner-message input and sent:
+            <strong
+              >“Approved. Push exactly the prepared commit and post a concise
+              result.”</strong
+            >
+          </p>
+          <p>
+            That input talks directly to the persistent
+            <code>pr-autopilot-owner</code> instance. It was
+            <strong>not</strong> sent through the general Neon/display-assistant
+            chat, and it was <strong>not</strong> a GitHub “Approve” review. The
+            direct human message was the authority grant for that turn, which is
+            when the owner received push/respond tools.
+          </p>
+        </div>
+        <div class="sequence" aria-label="Approval sequence">
+          GitHub inline review comment → watch detects actionable feedback →
+          persistent owner edits and commits → watch becomes waiting → human
+          reviews diff in Active Watches → human sends “Approved…” to owner
+          input → approval turn gains push/respond tools → exact prepared SHA is
+          pushed
+        </div>
+      </section>
+
+      <section id="scope">
+        <p class="eyebrow">Test scope</p>
+        <h2>What was exercised</h2>
+        <div class="summary-grid">
+          <div class="metric">
+            <strong>1</strong>
+            <span>disposable live GitHub PR</span>
+          </div>
+          <div class="metric">
+            <strong>1</strong>
+            <span>stable Flue owner instance</span>
+          </div>
+          <div class="metric">
+            <strong>1</strong>
+            <span>managed worktree reused throughout</span>
+          </div>
+          <div class="metric">
+            <strong>2</strong>
+            <span>requested fixture changes</span>
+          </div>
+        </div>
+        <div class="card-grid" style="margin-top: 16px">
+          <article class="card">
+            <h3>Live surfaces</h3>
+            <ul>
+              <li>GitHub PR, inline review comments, commits, and checks</li>
+              <li>Neondeck Active Watches controls and diff viewer</li>
+              <li>Persistent Flue owner conversation</li>
+              <li>Typed watch/configuration APIs and scheduler tick</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Isolation</h3>
+            <ul>
+              <li>Dedicated temporary <code>NEONDECK_HOME</code></li>
+              <li>Fresh Neondeck and Flue databases</li>
+              <li>Temporary source and harness worktrees</li>
+              <li>Dedicated API and dashboard ports</li>
+            </ul>
+          </article>
+        </div>
+        <div class="callout warning" style="margin-top: 16px">
+          <h3>Configuration provenance</h3>
+          <p>
+            The isolated runtime copied only the provider/environment material
+            needed from the normal Neondeck configuration under
+            <code>~/.config/neondeck</code>. Runtime databases, registry,
+            watches, sessions, and worktrees were fresh. The user explicitly
+            authorized sending the disposable PR content and Neondeck agent
+            context to the configured Kilo provider.
+          </p>
+        </div>
+      </section>
+
+      <section id="method">
+        <p class="eyebrow">Method</p>
+        <h2>Test execution overview</h2>
+        <div class="steps">
+          <article class="step">
+            <div>
+              <h3>Preflight and disposable PR creation</h3>
+              <p>
+                Started Neondeck from an isolated home, verified provider
+                dispatch, created a harmless Markdown fixture, pushed a
+                temporary branch, and opened PR
+                <a href="https://github.com/pandemicsyn/neondeck/pull/176"
+                  >pandemicsyn/neondeck#176</a
+                >. The PR was explicitly marked disposable and never merged.
+              </p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div>
+              <h3>Passive watch and lazy ownership</h3>
+              <p>
+                Created a <code>notify-only</code> watch through the dashboard
+                chat’s typed configure action. Confirmed there was initially no
+                owner or managed worktree. Increased authority through the
+                Active Watches mode selector and its explicit confirmation.
+              </p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div>
+              <h3>Approval-mode change</h3>
+              <p>
+                Added an inline review request changing
+                <code>approval: pending</code> to
+                <code>approval: handled</code>. The first actionable event
+                lazily bound owner
+                <code>pr-owner-f667253464e4ff827bafdbb0</code> and worktree
+                <code>908e7649-0976-48a4-aac2-fcd945675c62</code>. The owner
+                prepared commit
+                <code>ee595bb0978794e9c82edda3bfb5419f675efa5d</code>
+                without push authority.
+              </p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div>
+              <h3>Restart and direct-human approval</h3>
+              <p>
+                Restarted Neondeck while the watch was waiting. The same owner,
+                worktree, diff, commit, and conversation recovered. Reviewed the
+                diff in Active Watches, then approved through its direct owner
+                input. The exact prepared SHA was pushed and one concise result
+                comment was posted.
+              </p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div>
+              <h3>Autonomous fail-closed path</h3>
+              <p>
+                Increased the mode to <code>autofix-push-when-safe</code>,
+                paused polling, and added a request changing
+                <code>autonomous: pending</code> to
+                <code>autonomous: handled</code>. Nothing ran while paused.
+                After resume, the owner prepared commit
+                <code>6938fa14f46e538935eea6d2e62c14593f5798bd</code>
+                and correctly refused to push because no required check was
+                configured.
+              </p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div>
+              <h3>Policy repair, credential proof, and safe push</h3>
+              <p>
+                Configured and preapproved the exact targeted check
+                <code
+                  >git diff --check HEAD^ HEAD --
+                  AUTOPILOT_FUNCTIONAL_TEST.md</code
+                >. The check passed. SSH then failed closed because the
+                transport actor could not be proven to match the GitHub API
+                actor. A process-only HTTPS URL rewrite provided verifiable
+                credential identity without changing shared Git configuration. A
+                fresh review-thread instruction caused safe-push to re-run and
+                push the exact prepared SHA non-force.
+              </p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div>
+              <h3>Idempotency, terminal state, and cleanup</h3>
+              <p>
+                Forced another scheduler tick and observed no duplicate commit,
+                push, or PR comment. Closed the PR, observed
+                <code>complete</code>, confirmed direct owner messages were
+                rejected, and verified the managed worktree was deleted while
+                the durable owner conversation remained readable. Finally
+                deleted the remote branch and all temporary runtime resources.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="results">
+        <p class="eyebrow">Results</p>
+        <h2>Acceptance matrix</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Behavior</th>
+                <th>Result</th>
+                <th>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Primary checkout isolation</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>
+                  Clean at
+                  <code>4562ddef226e1728ed11f53e81a939ecb526a534</code>; SSH
+                  remote unchanged.
+                </td>
+              </tr>
+              <tr>
+                <td>Lazy owner/worktree creation</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>No binding until the first actionable review event.</td>
+              </tr>
+              <tr>
+                <td>Stable owner and worktree reuse</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>
+                  Same IDs across approval, restart, and autonomous turns.
+                </td>
+              </tr>
+              <tr>
+                <td>Authority-increase confirmation</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>UI confirmation required for both mode escalations.</td>
+              </tr>
+              <tr>
+                <td>Approval push boundary</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>No push before the direct-human owner message.</td>
+              </tr>
+              <tr>
+                <td>Restart while waiting</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>Prepared state and canonical conversation survived.</td>
+              </tr>
+              <tr>
+                <td>No-check autonomous failure</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>Blocked, retained prepared commit, remote unchanged.</td>
+              </tr>
+              <tr>
+                <td>Targeted check and safe push</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>
+                  Exact check passed; HTTPS-bound credential pushed exact SHA.
+                </td>
+              </tr>
+              <tr>
+                <td>Plain retry after credential repair</td>
+                <td><span class="status fail">Fail</span></td>
+                <td>Owner reused stale actor-provenance conclusion.</td>
+              </tr>
+              <tr>
+                <td>Autonomous result response</td>
+                <td><span class="status fail">Fail</span></td>
+                <td>Push succeeded, but no concise PR response was posted.</td>
+              </tr>
+              <tr>
+                <td>Effect idempotency</td>
+                <td><span class="status pass">Pass</span></td>
+                <td>No duplicate commit, push, or comment on another tick.</td>
+              </tr>
+              <tr>
+                <td>Feedback delivery idempotency</td>
+                <td><span class="status partial">Partial</span></td>
+                <td>Old feedback was redelivered after becoming outdated.</td>
+              </tr>
+              <tr>
+                <td>Terminal cleanup</td>
+                <td><span class="status partial">Partial</span></td>
+                <td>Cleanup passed, but completed watch accepted resume.</td>
+              </tr>
+              <tr>
+                <td>Chat-driven typed configuration</td>
+                <td><span class="status fail">Fail</span></td>
+                <td>
+                  Agent wandered and over-mutated unrelated policy fields.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="findings">
+        <p class="eyebrow">Findings</p>
+        <h2>Defects to address</h2>
+
+        <article class="finding">
+          <div class="priority fail">P1</div>
+          <div>
+            <h3>Completed watches can be resumed</h3>
+            <p>
+              After terminal cleanup, the dashboard still showed
+              <code>resume</code>. The control API accepted it and re-enabled
+              the scheduled task even though
+              <code>autopilotStatus=complete</code>. The test immediately paused
+              it again. Terminal watches should reject pause/resume/retry
+              mutations, and the UI should hide or disable those controls.
+            </p>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="priority fail">P1</div>
+          <div>
+            <h3>
+              Chat configuration does not behave like a bounded typed mutation
+            </h3>
+            <p>
+              The display assistant was asked to make one exact policy change.
+              It inspected unrelated files and shell state, called multiple
+              tools, duplicated commands, and changed guardrails and mode fields
+              that were supposed to remain untouched. The deterministic actions
+              were sound when invoked directly; the chat entry point was not.
+              Configuration prompts need stronger tool routing and
+              patch/field-preservation semantics.
+            </p>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="priority partial">P2</div>
+          <div>
+            <h3>Retry does not guarantee a fresh safe-push probe</h3>
+            <p>
+              After changing the Git environment from unverifiable SSH to
+              verifiable HTTPS, a plain retry delivered a new owner turn, but
+              the persistent model reused its previous failure conclusion and
+              did not call safe-push again. A new review-thread message was
+              required to force reevaluation. Retry should carry an explicit
+              “re-run current gates now” instruction or deterministically invoke
+              the safe-push attempt outside model discretion.
+            </p>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="priority partial">P2</div>
+          <div>
+            <h3>Autonomous success omitted the PR response</h3>
+            <p>
+              The autonomous owner called safe-push successfully and reported
+              success in its conversation, but never called its response tool.
+              The PR therefore had no concise autonomous-result comment.
+              Successful autonomous completion should deterministically require
+              or perform the result response.
+            </p>
+          </div>
+        </article>
+
+        <article class="finding">
+          <div class="priority note">P3</div>
+          <div>
+            <h3>Outdated review comments are redelivered as new</h3>
+            <p>
+              When a push changed line/outdated state, feedback fingerprints
+              changed and earlier comments were emitted again as new actionable
+              deltas. The owner no-op’d them, so external effects remained
+              idempotent, but this consumed model turns and generated noisy
+              notifications. Delivery identity should remain stable across
+              positional/outdated metadata changes.
+            </p>
+          </div>
+        </article>
+      </section>
+
+      <section id="architecture">
+        <p class="eyebrow">Architecture assessment</p>
+        <h2>What the run validated</h2>
+        <div class="two-col">
+          <article class="card">
+            <h3>The simple model is real</h3>
+            <p>
+              One watched PR retained one stable Flue instance and one managed
+              worktree. The owner’s canonical conversation recorded feedback,
+              tool calls, approval, failures, retries, and the successful push.
+              This matches Flue’s durable-agent model: later turns reconstruct
+              context from one continuing stream rather than inventing
+              workflow-per-transition state.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Capability ceilings held</h3>
+            <p>
+              The review-event turn in approval mode could edit and commit but
+              could not push. The direct-human approval turn gained push/respond
+              tools. Autonomous mode received push only behind targeted checks,
+              current-head verification, policy, credential, and non-force
+              gates. Both missing checks and uncertain identity failed closed.
+            </p>
+          </article>
+        </div>
+        <div class="callout danger" style="margin-top: 16px">
+          <h3>Bottom line</h3>
+          <p>
+            The implementation is not an elaborate distributed coordinator; the
+            tested core is the intended small watch/owner/worktree loop. The
+            remaining problems are boundary and instruction-following defects,
+            not evidence that the core architecture needs more machinery. Fix
+            the deterministic terminal/retry/response boundaries and tighten
+            configuration routing before adding new coordination concepts.
+          </p>
+        </div>
+      </section>
+
+      <section id="cleanup">
+        <p class="eyebrow">Disposition</p>
+        <h2>Final state</h2>
+        <ul>
+          <li>
+            PR
+            <a href="https://github.com/pandemicsyn/neondeck/pull/176">#176</a>
+            was closed and never merged.
+          </li>
+          <li>The disposable remote branch was deleted.</li>
+          <li>
+            The managed worktree record ended as
+            <code>lifecycle_status=deleted</code> with
+            <code>last_pushed_sha=6938fa14f46e538935eea6d2e62c14593f5798bd</code
+            >.
+          </li>
+          <li>
+            The isolated API, dashboard, runtime home, and temporary source and
+            harness worktrees were removed.
+          </li>
+          <li>
+            The primary checkout remained clean and its Git remote configuration
+            was unchanged.
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <div class="shell">
+        Neondeck Autopilot functional research report · disposable live test ·
+        no production PR was merged.
+      </div>
+    </footer>
+  </body>
+</html>

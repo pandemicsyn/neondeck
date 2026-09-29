@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Sanitized Neondeck Autopilot functional test report" />
+    <title>{{REPORT_TITLE}}</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0a0b10; color: #d7f7ff; }
+      body { max-width: 72rem; margin: auto; padding: 2rem; line-height: 1.55; }
+      h1, h2 { line-height: 1.15; } section { border-top: 1px solid #ffffff12; padding: 1.5rem 0; }
+      table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #ffffff12; padding: .6rem; text-align: left; vertical-align: top; }
+      code { color: #69e6ff; overflow-wrap: anywhere; } .verdict { border: 1px solid #00b7c7; padding: 1rem; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <p>Neondeck Autopilot · {{PROFILE}} · {{RUN_DATE}}</p>
+      <h1>{{REPORT_TITLE}}</h1>
+      <div class="verdict">{{EXECUTIVE_VERDICT}}</div>
+    </header>
+    <main>
+      <section>
+        <h2>Approval method</h2>
+        <p>{{APPROVAL_METHOD}}</p>
+        <p><strong>Exact reviewed artifact:</strong> {{APPROVAL_ARTIFACT}}</p>
+      </section>
+      <section>
+        <h2>Environment and configuration provenance</h2>
+        <p>{{CONSENT_PROVENANCE}}</p>
+        <p>{{ENVIRONMENT_PROVENANCE}}</p>
+        <p>{{PROVIDER_AND_GIT_IDENTITY_PROVENANCE}}</p>
+      </section>
+      <section>
+        <h2>Exact evidence</h2>
+        {{EVIDENCE_SUMMARY}}
+      </section>
+      <section>
+        <h2>Workspace and delivery authority</h2>
+        {{WORKSPACE_AND_AUTHORITY_EVIDENCE}}
+      </section>
+      <section>
+        <h2>Autonomous judgment and mechanical delivery guards</h2>
+        {{AUTONOMOUS_DELIVERY_EVIDENCE}}
+      </section>
+      <section>
+        <h2>Acceptance matrix</h2>
+        <table>
+          <thead><tr><th>Behavior</th><th>Result</th><th>Evidence</th></tr></thead>
+          <tbody>{{ACCEPTANCE_ROWS}}</tbody>
+        </table>
+      </section>
+      <section>
+        <h2>Defects</h2>
+        {{DEFECTS}}
+      </section>
+      <section>
+        <h2>Limitations</h2>
+        {{LIMITATIONS}}
+      </section>
+      <section>
+        <h2>Cleanup</h2>
+        {{CLEANUP_EVIDENCE}}
+      </section>
+      <section>
+        <h2>Final pull request state</h2>
+        <p>{{FINAL_PR_STATE}}</p>
+        <p><strong>Primary checkout:</strong> {{PRIMARY_CHECKOUT_RESULT}}</p>
+      </section>
+    </main>
+  </body>
+</html>
