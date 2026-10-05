@@ -57,10 +57,10 @@ export function createGitHubRoutes(
       c.req.param('number'),
     );
     if (!target.ok) return c.json(target.result, 400);
-    const result = await getGitHubPullRequest(
-      { repo: target.input.repo, number: target.input.prNumber },
-      paths,
-    );
+    const result = await getGitHubPullRequest({
+      repo: target.input.repo,
+      number: target.input.prNumber,
+    });
     return c.json(result, result.ok ? 200 : 400);
   });
 
