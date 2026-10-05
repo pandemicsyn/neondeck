@@ -91,7 +91,6 @@ export async function listGitHubPrQueue(
 
 export async function getGitHubPullRequest(
   input: v.InferInput<typeof pullRequestInputSchema>,
-  paths: RuntimePaths = runtimePaths(),
   dependencies: GitHubActionDependencies = {},
 ): Promise<GitHubActionResult> {
   const parsed = v.safeParse(pullRequestInputSchema, input);
