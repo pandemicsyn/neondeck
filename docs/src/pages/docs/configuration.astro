@@ -34,6 +34,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   skills/
     custom-skill/
       SKILL.md
+  worktrees/
   data/
     backups/
     neondeck.db
@@ -41,7 +42,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           <code>data/neondeck.db</code> stores app state: watches, scheduled tasks,
           notifications, memories, workflow summaries, config history, and execution
-          approvals, and ChatGPT OAuth credentials.
+          approvals, and ChatGPT OAuth credentials. <code>worktrees/</code> contains
+          Neondeck-managed Git worktrees when a repository uses the default
+          runtime-home worktree location.
           <code>data/flue.db</code> stores Flue runtime state. On POSIX systems, Neondeck
           protects the <code>data/</code> directory and the Neondeck database, including
           existing WAL and shared-memory sidecars, before accessing OAuth credentials.
