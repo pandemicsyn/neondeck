@@ -9,10 +9,6 @@ import {
   type GitHubFailingCheckFact,
   type GitHubPullRequestDetail,
   type GitHubPullRequestEventState,
-  fetchPullRequestEventState,
-  fetchCheckSummary,
-  fetchFailingCheckFacts,
-  fetchPullRequestDetail,
 } from '../github';
 import {
   checkAutopilotConcurrency,
