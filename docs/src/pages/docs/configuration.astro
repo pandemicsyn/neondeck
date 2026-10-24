@@ -277,6 +277,30 @@ GITHUB_LOGIN=...</code></pre>
                 </td>
                 <td>Uses <code>displayAssistant</code></td>
               </tr>
+              <tr>
+                <th scope="row"><code>subagents.repoResearcher</code></th>
+                <td>Repository context and local-status investigation</td>
+                <td>
+                  Uses <code>subagents.default</code>, then
+                  <code>displayAssistant</code>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row"><code>subagents.ciInvestigator</code></th>
+                <td>CI, check, and validation-fact investigation</td>
+                <td>
+                  Uses <code>subagents.default</code>, then
+                  <code>displayAssistant</code>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row"><code>subagents.releaseReviewer</code></th>
+                <td>Release, PR-watch, and scheduler readiness review</td>
+                <td>
+                  Uses <code>subagents.default</code>, then
+                  <code>displayAssistant</code>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
