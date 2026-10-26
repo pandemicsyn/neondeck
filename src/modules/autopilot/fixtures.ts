@@ -2,7 +2,6 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   type GitHubCheckSummary,
