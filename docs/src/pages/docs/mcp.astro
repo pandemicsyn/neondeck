@@ -126,6 +126,7 @@ neondeck mcp logout linear --confirm</code></pre>
         <pre><code>neondeck mcp list
 neondeck mcp status [id]
 neondeck mcp add &lt;id&gt; --url ... | --command ...
+neondeck mcp remove &lt;id&gt; --confirm
 neondeck mcp enable &lt;id&gt;
 neondeck mcp disable &lt;id&gt;
 neondeck mcp tools &lt;id&gt;
@@ -136,7 +137,7 @@ neondeck mcp audit</code></pre>
         <pre><code>GET    /api/mcp/servers
 POST   /api/mcp/servers
 PATCH  /api/mcp/servers/:id
-DELETE /api/mcp/servers/:id
+DELETE /api/mcp/servers/:id?confirm=true
 GET    /api/mcp/servers/:id/tools
 POST   /api/mcp/servers/:id/refresh
 POST   /api/mcp/servers/:id/login
@@ -146,6 +147,11 @@ POST   /api/mcp/servers/:id/logout
 GET    /api/mcp/approvals
 POST   /api/mcp/approvals/:id/resolve
 GET    /api/mcp/audit</code></pre>
+        <p>
+          Removing a server requires explicit confirmation: use
+          <code>--confirm</code> with the CLI, or pass <code>confirm=true</code>
+          in the API query string or JSON body.
+        </p>
 
         <h2>Agent boundary</h2>
         <p>
