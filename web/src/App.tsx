@@ -1,4 +1,3 @@
-import { FactoryNav, FactoryPage } from './features/factory/FactoryPage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   lazy,
@@ -79,9 +78,7 @@ export function App() {
   const reviewRoute = useMemo(readReviewPopoutRoute, []);
   const briefingRoute = useMemo(readReviewBriefingRoute, []);
   const activityRoute = useMemo(readActivityRoute, []);
-  const factoryRoute = window.location.pathname === '/factory';
   const isDashboardRoute =
-    !factoryRoute &&
     reviewRoute.kind === 'none' &&
     briefingRoute.kind === 'none' &&
     activityRoute.kind === 'none';
@@ -266,8 +263,6 @@ export function App() {
     );
   }
 
-  if (factoryRoute) return <FactoryPage />;
-
   if (error && !config) {
     return (
       <BootState
@@ -325,7 +320,6 @@ function DashboardShell({ config }: { config: DashboardConfig }) {
         Neondeck developer cockpit
       </h1>
       <UpdateBanner />
-      <FactoryNav />
       <div
         className={`dashboard-grid deck-density-${appearance.density} grid min-h-0 w-full flex-1 gap-0 border-0 bg-canvas p-0`}
         data-display-preset={displayPreset}
@@ -454,14 +448,7 @@ function DashboardPanel({
   region: DashboardRegion;
   rowOffset: number;
 }) {
-  const requestedPanel = new URLSearchParams(window.location.search).get(
-    'panel',
-  );
-  const initialTabId =
-    region.tabs.find((tab) => tab.pluginId === requestedPanel)?.id ??
-    region.defaultTab ??
-    region.tabs[0]?.id ??
-    '';
+  const initialTabId = region.defaultTab ?? region.tabs[0]?.id ?? '';
   const [activeTabId, setActiveTabId] = useState(initialTabId);
   const [focusPulse, setFocusPulse] = useState(false);
   const focusPulseTimeoutRef = useRef<number | null>(null);

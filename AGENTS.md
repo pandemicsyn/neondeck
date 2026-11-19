@@ -5,11 +5,11 @@ This repository is `neondeck`: a local-first developer cockpit for a companion d
 ## Read First
 
 - Product roadmap: `.plans/ROADMAP.md`
-- Hermes research notes and inspiration: `.plans/HERMES_RESEARCH.md`
+- Hermes research notes and inspiration: `.plans/research/HERMES_RESEARCH.md`
 - User-facing project summary: `README.md`
 - Current agent personality file: `SOUL.md`
 
-The roadmap is the source of truth for direction, implementation order, and completion status. Follow its current **Software Factory Slice 1** status and direction and `.plans/factory/SLICE_1_IMPLEMENTATION_PLAN.md` for the requested intake-to-human-released-queue work. Build on the existing runtime, repo/GitHub, schedules, skills, and dashboard foundations; coding execution belongs to a subsequent slice. Check the roadmap and factory handoff ledger before assigning work rather than treating this direction as a completion claim.
+The roadmap is the source of truth for product direction, implementation order, and completion status.
 
 ## Architecture Direction
 

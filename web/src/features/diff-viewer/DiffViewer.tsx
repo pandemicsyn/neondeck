@@ -264,7 +264,7 @@ function toneClass(tone: DiffViewTone) {
   return 'text-primary';
 }
 
-export function useResolvedDiffTheme(): ResolvedDiffTheme {
+function useResolvedDiffTheme(): ResolvedDiffTheme {
   const [theme, setTheme] = useState<ResolvedDiffTheme>(() =>
     readResolvedDiffTheme(),
   );
@@ -287,6 +287,5 @@ export function useResolvedDiffTheme(): ResolvedDiffTheme {
 
 function readResolvedDiffTheme(): ResolvedDiffTheme {
   if (typeof document === 'undefined') return 'dark';
-  // The root stylesheet defaults to light, including standalone Factory routes.
-  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }

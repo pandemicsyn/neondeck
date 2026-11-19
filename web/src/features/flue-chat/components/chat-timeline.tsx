@@ -6,12 +6,10 @@ import { SessionActivityRow } from './session-activity-row';
 
 export const ChatTimelineItems = memo(function ChatTimelineItems({
   hasSession,
-  emptyMessage,
   items,
   renderPart = renderMessagePart,
 }: {
   hasSession: boolean;
-  emptyMessage?: string;
   items: SessionTimelineItem[];
   renderPart?: (part: unknown, key: string) => ReactNode;
 }) {
@@ -25,8 +23,7 @@ export const ChatTimelineItems = memo(function ChatTimelineItems({
           </p>
           <p className="mt-1 leading-5">
             {hasSession
-              ? (emptyMessage ??
-                'Ask about a PR, check an active watch, or explore your runtime.')
+              ? 'Ask about a PR, check an active watch, or explore your runtime.'
               : 'Your chat will be ready in a moment.'}
           </p>
         </div>

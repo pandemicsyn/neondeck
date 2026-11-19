@@ -1,9 +1,3 @@
-import { getCodingRun } from '../coding-runs';
-import {
-  assertFactoryClaim,
-  guardCodingWorktree,
-  type FactoryWorkspaceClaim,
-} from './coding-guard';
 import { randomUUID } from 'node:crypto';
 import { currentFlueExecutionContext } from '../flue';
 import { realpath } from 'node:fs/promises';
@@ -63,7 +57,6 @@ import {
 export async function createWorktree(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
-  factoryClaim?: FactoryWorkspaceClaim,
 ) {
   const parsed = parseInput(createInputSchema, rawInput, 'worktree_create');
   if (!parsed.ok) return parsed.result;
@@ -71,21 +64,6 @@ export async function createWorktree(
 
   try {
     await ensureRuntimeHome(paths);
-    if (input.workflowRunId) {
-      const codingRun = getCodingRun(input.workflowRunId, paths);
-      if (codingRun) {
-        assertFactoryClaim(codingRun, factoryClaim);
-        if (
-          codingRun.status !== 'reserved' ||
-          codingRun.workspace ||
-          codingRun.cancelRequestedAt
-        )
-          throw new WorktreeError(
-            'FACTORY_FENCED',
-            'Factory workspace creation is fenced.',
-          );
-      }
-    }
     const context = await repoContext(input.repoId, paths);
     const repoRoot = await realpath(context.repo.path);
     const baseRef = input.baseRef ?? context.repo.defaultBranch;
@@ -130,6 +108,15 @@ export async function createWorktree(
             paths,
           )
         : requestedLocalPath;
+    if (
+      input.localPath &&
+      findWorktreeByLocalPath(localPath, paths)?.lifecycleStatus === 'archived'
+    ) {
+      throw new WorktreeError(
+        'WORKTREE_ARCHIVED',
+        `The checkout at ${localPath} is archived.`,
+      );
+    }
     const now = new Date().toISOString();
     const adopted = Boolean(input.adopted);
     const createdBy = input.createdBy ?? (adopted ? 'user' : 'neondeck');
@@ -417,7 +404,6 @@ export async function readWorktreeStatus(
 export async function lockWorktree(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
-  factoryClaim?: FactoryWorkspaceClaim,
 ) {
   const parsed = parseInput(lockInputSchema, rawInput, 'worktree_lock');
   if (!parsed.ok) return parsed.result;
@@ -478,7 +464,7 @@ export async function lockWorktree(
       createdAt,
       updatedAt: createdAt,
     };
-    const acquired = acquireLock(lock, now, paths, factoryClaim);
+    const acquired = acquireLock(lock, now, paths);
     if (!acquired.ok) {
       return {
         ok: false,
@@ -534,8 +520,6 @@ export async function revokeWorktreeLockLease(
 ) {
   await ensureRuntimeHome(paths);
   const lock = requireLock(lockId, paths);
-  if (lock.worktreeId)
-    guardCodingWorktree(requireWorktree(lock.worktreeId, paths), paths);
   if (lock.releasedAt || lock.revokedAt) return lock;
   const now = new Date().toISOString();
   revokeLock(lock.id, now, paths);
@@ -552,7 +536,6 @@ export function readWorktreeLock(
 export async function releaseWorktreeLock(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
-  factoryClaim?: FactoryWorkspaceClaim,
 ) {
   const parsed = parseInput(releaseInputSchema, rawInput, 'worktree_release');
   if (!parsed.ok) return parsed.result;
@@ -561,12 +544,6 @@ export async function releaseWorktreeLock(
   try {
     await ensureRuntimeHome(paths);
     const lock = requireLock(input.lockId, paths);
-    if (lock.worktreeId)
-      guardCodingWorktree(
-        requireWorktree(lock.worktreeId, paths),
-        paths,
-        factoryClaim,
-      );
     if (lock.releasedAt) {
       return {
         ok: true,
@@ -623,7 +600,6 @@ export async function releaseWorktreeLock(
 export async function cleanupWorktrees(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
-  factoryClaim?: FactoryWorkspaceClaim,
 ) {
   const parsed = parseInput(cleanupInputSchema, rawInput, 'worktree_cleanup');
   if (!parsed.ok) return parsed.result;
@@ -640,12 +616,7 @@ export async function cleanupWorktrees(
     let changed = false;
 
     for (const record of records) {
-      const decision = await cleanupDecision(
-        record,
-        input,
-        paths,
-        factoryClaim,
-      );
+      const decision = await cleanupDecision(record, input, paths);
       if (!decision.delete) {
         recordCleanupAttempt(
           record,
@@ -689,7 +660,6 @@ export async function cleanupWorktrees(
           ttlSeconds: 300,
         },
         paths,
-        factoryClaim,
       );
       if (!acquired.ok || !('lock' in acquired)) {
         const reason = 'worktree became locked before cleanup';

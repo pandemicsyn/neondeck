@@ -4,11 +4,6 @@ on:
   pull_request:
     branches:
       - main
-      - agent/software-factory-plan
-      - 'agent/factory-s1-*'
-      - 'agent/factory-s3-*'
-      - 'agent/factory-s31-*'
-      - 'agent/factory-s4-*'
   workflow_dispatch:
 
 permissions:

@@ -1,5 +1,4 @@
-import { fileURLToPath } from 'node:url';
-import { devServicesPlugin } from './src/server/dev-services-plugin.ts';
+import { readFileSync } from 'node:fs';
 import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
 import { resolveBuildVersion } from './src/package-version.ts';
@@ -10,18 +9,23 @@ const buildVersion = resolveBuildVersion(
 
 export default defineConfig({
   plugins: [
-    devServicesPlugin(),
     flue(),
     {
-      name: 'neondeck-production-host',
+      name: 'neondeck-loopback-server',
       apply: 'build',
-      buildStart() {
+      generateBundle(_options, bundle) {
+        if (!bundle['app.mjs'] || !bundle['server.mjs']) {
+          this.error('Expected Flue to emit app.mjs and server.mjs.');
+        }
+        // Flue's default launcher leaves the bind address unspecified.
+        delete bundle['server.mjs'];
+        delete bundle['server.mjs.map'];
         this.emitFile({
-          type: 'chunk',
-          id: fileURLToPath(
-            new URL('./src/server/production.ts', import.meta.url),
+          type: 'asset',
+          fileName: 'server.mjs',
+          source: readFileSync(
+            new URL('./src/server/production.mjs', import.meta.url),
           ),
-          fileName: 'neondeck-server.mjs',
         });
       },
     },

@@ -5,12 +5,10 @@ import { useFlueAgent } from '@flue/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
   type FormEvent,
-  type ReactNode,
   type KeyboardEvent,
 } from 'react';
 import type {
@@ -39,10 +37,7 @@ import {
   Textarea,
 } from '../../../components/ui';
 import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
-import {
-  createFactoryPlannerConversationClient,
-  createNeondeckConversationClient,
-} from '../../../lib/flue';
+import { createNeondeckConversationClient } from '../../../lib/flue';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary } from './command-controls';
 import { ChatResponseProgress, ChatTimelineItems } from './chat-timeline';
@@ -65,18 +60,10 @@ export function FlueChatSessionView({
   allowCommands = true,
   messageEnabled = true,
   messageLabel = 'Message Neon',
-  composerVariant = 'compact',
-  draftEnabled,
-  composerNotice,
-  draftStorageKey,
-  consumedDraft,
-  responsePending = false,
-  emptyMessage,
   onReferenceDraftConsumed,
   onSendMessage,
   quickCommands,
   referenceDraft,
-  refreshKey,
   session,
   sessionState,
 }: {
@@ -85,51 +72,17 @@ export function FlueChatSessionView({
   allowCommands?: boolean;
   messageEnabled?: boolean;
   messageLabel?: string;
-  composerVariant?: 'compact' | 'reply';
-  /** Opt in to editing drafts independently of admission gates. */
-  draftEnabled?: boolean;
-  composerNotice?: ReactNode;
-  draftStorageKey?: string;
-  consumedDraft?: { message: string; storageKey: string };
-  responsePending?: boolean;
-  emptyMessage?: string;
   onReferenceDraftConsumed?: () => void;
   onSendMessage?: (
     message: string,
   ) => Promise<{ submissionId?: string } | void>;
   quickCommands: FlueChatConfig['quickCommands'];
   referenceDraft?: string;
-  refreshKey?: string | null;
   session: FlueChatSession | undefined;
   sessionState: NeonSessionState | undefined;
 }) {
-  const composerId = useId();
-  const multilineReply = composerVariant === 'reply';
   const eventConnection = useDashboardEventConnectionState();
-  const [input, setInput] = useState(() => {
-    try {
-      return draftStorageKey
-        ? (sessionStorage.getItem(draftStorageKey) ?? '')
-        : '';
-    } catch {
-      return '';
-    }
-  });
-  useEffect(() => {
-    if (consumedDraft && consumedDraft.storageKey === draftStorageKey)
-      setInput((current) => (current === consumedDraft.message ? '' : current));
-  }, [consumedDraft, draftStorageKey]);
-  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
-  useEffect(() => {
-    if (!draftStorageKey) return;
-    try {
-      if (input) sessionStorage.setItem(draftStorageKey, input);
-      else sessionStorage.removeItem(draftStorageKey);
-      setDraftStorageFailed(false);
-    } catch {
-      setDraftStorageFailed(true);
-    }
-  }, [draftStorageKey, input]);
+  const [input, setInput] = useState('');
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
   const [commandSubmitting, setCommandSubmitting] = useState(false);
@@ -143,33 +96,15 @@ export function FlueChatSessionView({
   const conversationClient = useMemo(
     () =>
       session?.id
-        ? agentName === 'factory-planner'
-          ? createFactoryPlannerConversationClient(session.id)
-          : createNeondeckConversationClient(agentName, session.id)
+        ? createNeondeckConversationClient(agentName, session.id)
         : undefined,
     [agentName, session?.id],
   );
   const agent = useFlueAgent({ client: conversationClient });
   const refreshAgent = agent.refresh;
-  useEffect(() => {
-    if (refreshKey) refreshAgent();
-  }, [refreshAgent, refreshKey]);
   const messages = useMemo(
-    () =>
-      chatMessagesForRender(
-        agentName === 'factory-planner'
-          ? agent.messages.map((message) =>
-              message.signal?.tagName === 'factory-human-message'
-                ? {
-                    ...message,
-                    role: 'user' as const,
-                    display: 'visible' as const,
-                  }
-                : message,
-            )
-          : agent.messages,
-      ),
-    [agent.messages, agentName],
+    () => chatMessagesForRender(agent.messages),
+    [agent.messages],
   );
   const commandsQuery = useQuery({
     queryKey: queryKeys.neonCommands,
@@ -213,12 +148,10 @@ export function FlueChatSessionView({
           ? 'submitted'
           : agent.status === 'streaming'
             ? 'streaming'
-            : responsePending
-              ? 'submitted'
-              : undefined;
+            : undefined;
   const inputPlaceholder = !session
     ? 'Resolving active session...'
-    : !messageEnabled || draftEnabled
+    : !messageEnabled
       ? session.placeholder
       : historyInputBlocked
         ? 'Loading session history...'
@@ -610,7 +543,6 @@ export function FlueChatSessionView({
             ))}
             <ChatTimelineItems
               hasSession={Boolean(session)}
-              emptyMessage={emptyMessage}
               items={timelineItems}
             />
             {responseProgress ? (
@@ -649,38 +581,12 @@ export function FlueChatSessionView({
             {submitError}
           </div>
         ) : null}
-        {draftStorageFailed && (
-          <p role="alert">
-            Browser draft storage is unavailable. Copy your unsent reply before
-            reloading.
-          </p>
-        )}
         <form
-          className={
-            multilineReply
-              ? 'flue-chat-composer flue-chat-composer-reply'
-              : 'flue-chat-composer flex min-h-11 items-center gap-2.5 px-4'
-          }
+          className="flue-chat-composer flex min-h-11 items-center gap-2.5 px-4"
           onSubmit={submit}
         >
-          {multilineReply ? (
-            <label htmlFor={composerId}>{messageLabel}</label>
-          ) : (
-            <span className="font-mono text-[13px] text-accent">›</span>
-          )}
-          {composerNotice && (
-            <div
-              id={`${composerId}-notice`}
-              className="flue-chat-composer-notice"
-            >
-              {composerNotice}
-            </div>
-          )}
+          <span className="font-mono text-[13px] text-accent">›</span>
           <Textarea
-            id={composerId}
-            aria-describedby={
-              composerNotice ? `${composerId}-notice` : undefined
-            }
             aria-activedescendant={commandMenu.activeOptionId}
             aria-autocomplete="list"
             aria-controls={commandMenu.id}
@@ -694,59 +600,46 @@ export function FlueChatSessionView({
             }}
             onKeyDown={handleKeyDown}
             placeholder={inputPlaceholder}
-            rows={Math.min(
-              multilineReply ? 10 : 5,
-              Math.max(multilineReply ? 4 : 1, input.split('\n').length),
-            )}
+            rows={Math.min(5, Math.max(1, input.split('\n').length))}
             role="combobox"
             disabled={
-              draftEnabled === undefined
-                ? !session ||
-                  !messageEnabled ||
-                  historyInputBlocked ||
-                  sendingMessage ||
-                  commandBusy
-                : !session || !draftEnabled
+              !session ||
+              !messageEnabled ||
+              historyInputBlocked ||
+              sendingMessage ||
+              commandBusy
             }
             value={input}
           />
-          <div
-            className={
-              multilineReply ? 'flue-chat-composer-actions' : 'contents'
+          <Kbd className="flue-chat-composer-hint">
+            {commandMenu.open
+              ? 'Tab complete'
+              : historyInputBlocked
+                ? 'Loading history'
+                : runningCommand
+                  ? 'Running'
+                  : commandSubmitting
+                    ? 'Starting'
+                    : sendingMessage
+                      ? 'Sending'
+                      : allowCommands
+                        ? '/ commands | Enter send'
+                        : 'Enter send'}
+          </Kbd>
+          <Button
+            className="flue-chat-send min-h-[28px] shrink-0 bg-transparent px-2 py-1 font-mono text-[10px]"
+            disabled={
+              !session ||
+              !messageEnabled ||
+              historyInputBlocked ||
+              !input.trim() ||
+              sendingMessage ||
+              commandBusy
             }
+            type="submit"
           >
-            <Kbd className="flue-chat-composer-hint">
-              {commandMenu.open
-                ? 'Tab complete'
-                : historyInputBlocked
-                  ? 'Loading history'
-                  : runningCommand
-                    ? 'Running'
-                    : commandSubmitting
-                      ? 'Starting'
-                      : sendingMessage
-                        ? 'Sending'
-                        : allowCommands
-                          ? '/ commands | Enter send'
-                          : multilineReply
-                            ? 'Enter send · Shift+Enter newline'
-                            : 'Enter send'}
-            </Kbd>
-            <Button
-              className="flue-chat-send min-h-[28px] shrink-0 bg-transparent px-2 py-1 font-mono text-[10px]"
-              disabled={
-                !session ||
-                !messageEnabled ||
-                historyInputBlocked ||
-                !input.trim() ||
-                sendingMessage ||
-                commandBusy
-              }
-              type="submit"
-            >
-              Send
-            </Button>
-          </div>
+            Send
+          </Button>
         </form>
       </div>
     </div>

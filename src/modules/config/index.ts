@@ -9,14 +9,3 @@ export * from './mutations/providers';
 export * from './mutations/repos';
 export * from './read';
 export * from './schemas';
-
-export {
-  updateFactoryConfig,
-  factoryConfigSnapshotFingerprint,
-} from './mutations/factory';
-
-export { recordConfigChange } from './history';
-export {
-  withFactoryMutationLock,
-  FactoryMutationLockError,
-} from './factory-mutation-lock';

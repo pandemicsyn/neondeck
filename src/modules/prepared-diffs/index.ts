@@ -35,5 +35,3 @@ export {
   mergeSummary,
   updatePreparedDiffState,
 } from './store';
-
-export { approvePreparedDiffPushState } from './store';

@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { githubGraphqlBaseResponseSchema } from './schemas';
 import { GitHubApiError, githubErrorMessage, isRequestTimeout } from './errors';
-import { githubRetryAt } from './retry';
 
 const githubRequestTimeoutMs = 15_000;
 const githubMaxConcurrentRequests = 8;
@@ -392,14 +391,6 @@ async function executeGitHubRequest(
       managedResponse.status,
       data,
       githubErrorMessage(managedResponse, data),
-      {
-        rateLimited:
-          managedResponse.status === 429 ||
-          (managedResponse.status === 403 &&
-            (managedResponse.headers.get('x-ratelimit-remaining') === '0' ||
-              managedResponse.headers.has('retry-after'))),
-        retryAt: githubRetryAt(managedResponse.headers),
-      },
     );
   }
 

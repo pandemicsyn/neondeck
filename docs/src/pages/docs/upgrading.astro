@@ -44,6 +44,18 @@ neondeck db backup</code></pre>
           > for behavior changes or extra migration instructions.
         </p>
 
+        <h3>Upgrading from a software factory development build</h3>
+        <p>
+          Settle any running coding attempts in the old build before upgrading.
+          The migration backs up the app database, archives factory checkouts in
+          place, and switches factory-linked PR watches to notify-only. If an
+          attempt was interrupted, check its private directory under
+          <code>NEONDECK_HOME/coding-attempts</code> for copied provider credentials
+          after confirming its process has stopped. Remove the attempt-local credential
+          copies while preserving your original login and any checkout or evidence
+          you need.
+        </p>
+
         <h2>Global npm installation</h2>
         <p>Beta releases currently use npm's <code>next</code> channel:</p>
         <pre><code>npm install --global neondeck@next</code></pre>

@@ -5,10 +5,3 @@ export * from './run';
 export * from './schemas';
 export * from './exedev/checkouts';
 export * from './exedev/context';
-// Shared deterministic verification runner policy primitives.
-export {
-  safeExecutionEnv,
-  splitCommand,
-  hasShellOperator,
-  executionResult,
-} from './utils';

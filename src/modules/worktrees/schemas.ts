@@ -14,7 +14,8 @@ export type WorktreeLifecycleStatus =
   | 'prepared-diff'
   | 'succeeded'
   | 'cleanup-pending'
-  | 'deleted';
+  | 'deleted'
+  | 'archived';
 
 export type WorktreeRecord = {
   id: string;
@@ -83,6 +84,7 @@ export const lifecycleStatusSchema = v.picklist([
   'succeeded',
   'cleanup-pending',
   'deleted',
+  'archived',
 ]);
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 export const repoIdSchema = nonEmptyStringSchema;

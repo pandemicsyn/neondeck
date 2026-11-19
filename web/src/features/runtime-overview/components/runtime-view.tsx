@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react';
+import { useId } from 'react';
 import { Badge, ScrollArea } from '../../../components/ui';
 import type { RuntimeStatus } from '../../../api';
 import {
@@ -46,11 +46,6 @@ export function RuntimeView({
   onRefresh: () => void;
   snapshot: RuntimeSnapshot;
 }) {
-  useEffect(() => {
-    const target = window.location.hash.slice(1);
-    if (target === 'runtime-model-config' || target === 'runtime-repositories')
-      document.getElementById(target)?.scrollIntoView?.({ block: 'start' });
-  }, []);
   const activeSkills = snapshot.skills.skills.filter(
     (skill) => skill.status === 'active',
   );
@@ -115,12 +110,7 @@ export function RuntimeView({
             status={snapshot.status}
             repoCount={snapshot.repos.length}
           />
-          <RuntimeSection
-            id="runtime-model-config"
-            count={3}
-            title="CONFIG"
-            tone="violet"
-          >
+          <RuntimeSection count={3} title="CONFIG" tone="violet">
             <RuntimeConfigControls
               onRefresh={onRefresh}
               status={snapshot.status}
@@ -194,7 +184,6 @@ export function RuntimeView({
             </div>
           </RuntimeSection>
           <RuntimeSection
-            id="runtime-repositories"
             count={snapshot.repos.length}
             title="REPOS"
             tone="primary"
