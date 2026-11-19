@@ -1,6 +1,5 @@
 import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import type { RepoConfig, RuntimePaths } from '../../runtime-home';
 import { WorktreeError, errorMessage } from './errors';
@@ -69,12 +68,8 @@ export function recordWorktreeCreating(
   );
 }
 
-export function upsertWorktree(
-  record: WorktreeRecord,
-  paths: RuntimePaths,
-  transaction?: DatabaseSync,
-) {
-  const database = transaction ?? openDb(paths.neondeckDatabase);
+export function upsertWorktree(record: WorktreeRecord, paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -137,7 +132,7 @@ export function upsertWorktree(
         record.updatedAt,
       );
   } finally {
-    if (!transaction) database.close();
+    database.close();
   }
 }
 
@@ -248,7 +243,7 @@ export function findReusableWorktree(
         WHERE repo_id = ?
           AND COALESCE(pr_number, -1) = COALESCE(?, -1)
           AND head_ref = ?
-          AND lifecycle_status != 'deleted'
+          AND lifecycle_status NOT IN ('deleted', 'archived')
         ORDER BY updated_at DESC
         LIMIT 1;
       `,
@@ -287,7 +282,14 @@ export function requireWorktree(id: string, paths: RuntimePaths) {
         `Worktree ${id} was not found.`,
       );
     }
-    return readWorktreeRow(row);
+    const record = readWorktreeRow(row);
+    if (record.lifecycleStatus === 'archived') {
+      throw new WorktreeError(
+        'WORKTREE_ARCHIVED',
+        `Worktree ${id} is archived and has been retained on disk.`,
+      );
+    }
+    return record;
   } finally {
     database.close();
   }
@@ -301,6 +303,7 @@ export function listWorktreeRecords(paths: RuntimePaths) {
         `
         SELECT *
         FROM worktrees
+        WHERE lifecycle_status <> 'archived'
         ORDER BY updated_at DESC, created_at DESC;
       `,
       )

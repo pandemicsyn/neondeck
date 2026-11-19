@@ -129,28 +129,3 @@ export type {
   GitHubQueueIssue,
   PullRequestQueueRelation,
 } from './schemas';
-export {
-  readFactoryGitHubIssue,
-  readFactoryGitHubIssuesPage,
-  readFactoryGitHubCommentsPage,
-  readFactoryGitHubComment,
-  readFactoryGitHubRepository,
-  createFactoryGitHubComment,
-  updateFactoryGitHubComment,
-  factoryGitHubIdentity,
-} from './factory-issues';
-export { GitHubApiError } from './errors';
-
-export { githubWritebackRetryAt } from './retry';
-
-export {
-  lookupFactoryGitHubPull,
-  createFactoryGitHubDraftPull,
-  observeFactoryGitHubPull,
-  readFactoryGitHubPull,
-} from './factory-pulls';
-
-export {
-  factoryPullIdentitySchema,
-  resolveFactoryGitHubRepository,
-} from './factory-pulls';

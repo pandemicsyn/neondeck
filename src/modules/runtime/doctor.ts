@@ -1,4 +1,4 @@
-import { privateServerUrl } from '../../lib/server-address';
+import { localServerUrl, resolveServerPort } from '../../lib/server-url';
 import { defineTool, type JsonValue } from '@flue/runtime';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -165,7 +165,7 @@ export async function runDevDoctor(
     readPackageSnapshot(rootDir),
     checkPorts([
       { id: 'dashboard', host: '127.0.0.1', port: 5173 },
-      { id: 'api', host: '127.0.0.1', port: 3583 },
+      { id: 'api', host: '127.0.0.1', port: resolveServerPort() },
     ]),
     readAppConfig(paths),
   ]);
@@ -553,9 +553,7 @@ function portsCheck(ports: Array<{ id: string; port: number; open: boolean }>) {
 
 async function serverHealthCheck(): Promise<DoctorCheck> {
   try {
-    const response = await fetchWithTimeout(
-      `${privateServerUrl(Number(process.env.NEONDECK_PORT ?? process.env.PORT ?? 3583))}/api/health`,
-    );
+    const response = await fetchWithTimeout(`${localServerUrl()}/api/health`);
     const raw = await response.json().catch(() => ({}));
     const parsed = v.safeParse(healthResponseSchema, raw);
     const ok = response.ok && parsed.success && parsed.output.ok;

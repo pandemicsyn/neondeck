@@ -1,11 +1,6 @@
-import { isFactoryOwnedWatchInTransaction } from '../factory-delivery/store';
 import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
-import {
-  openDb,
-  rollbackQuietly,
-  withImmediateTransaction,
-} from '../../lib/sqlite';
+import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   publishNotificationEvent,
@@ -694,8 +689,6 @@ export function bindWatchAutopilotOwner(
   try {
     database.exec('BEGIN IMMEDIATE;');
     try {
-      if (isFactoryOwnedWatchInTransaction(database, id))
-        throw new Error('Factory delivery owns this pull request.');
       const row = database
         .prepare('SELECT * FROM pr_watches WHERE id = ?;')
         .get(id);
@@ -745,24 +738,17 @@ export function claimWatchAutopilotTurn(
 ) {
   const database = openDb(paths.neondeckDatabase);
   try {
-    return withImmediateTransaction(database, () => {
-      if (isFactoryOwnedWatchInTransaction(database, id)) return undefined;
-      const now = new Date().toISOString();
-      const changed = database
-        .prepare(
-          `UPDATE pr_watches
+    const now = new Date().toISOString();
+    const changed = database
+      .prepare(
+        `UPDATE pr_watches
          SET autopilot_status = 'working', updated_at = ?
          WHERE id = ?
            AND autopilot_status = 'watching'
            AND (last_event_fingerprint IS NULL OR last_event_fingerprint <> ?);`,
-        )
-        .run(now, id, eventFingerprint).changes;
-      const row =
-        changed === 1
-          ? database.prepare('SELECT * FROM pr_watches WHERE id=?').get(id)
-          : undefined;
-      return row ? readWatchRow(row) : undefined;
-    });
+      )
+      .run(now, id, eventFingerprint).changes;
+    return changed === 1 ? readWatch(paths, id) : undefined;
   } finally {
     database.close();
   }
@@ -791,19 +777,8 @@ export function transitionWatchAutopilot(
   try {
     const placeholders = from.map(() => '?').join(', ');
     const now = new Date().toISOString();
-    database.exec(
-      input.eventWatermarks || input.to === 'working'
-        ? 'BEGIN IMMEDIATE;'
-        : 'BEGIN;',
-    );
+    database.exec(input.eventWatermarks ? 'BEGIN IMMEDIATE;' : 'BEGIN;');
     try {
-      if (
-        input.to === 'working' &&
-        isFactoryOwnedWatchInTransaction(database, id)
-      ) {
-        rollbackQuietly(database);
-        return undefined;
-      }
       const changed = database
         .prepare(
           `UPDATE pr_watches

@@ -1,4 +1,4 @@
-import { privateServerUrl } from '../../lib/server-address';
+import { localServerUrl } from '../../lib/server-url';
 import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
 import {
@@ -67,8 +67,7 @@ type TokenState = {
   updatedAt: string | null;
 };
 
-const defaultCallbackUrl = () =>
-  `${privateServerUrl(Number(process.env.NEONDECK_PORT ?? process.env.PORT ?? 3583))}/api/mcp/oauth/callback`;
+const defaultCallbackUrl = () => `${localServerUrl()}/api/mcp/oauth/callback`;
 const loginTtlMs = 10 * 60 * 1000;
 
 export type McpOAuthLoginOptions = {

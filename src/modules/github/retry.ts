@@ -8,7 +8,7 @@ const timestampSchema = v.pipe(
 );
 
 /** Untrusted provider timestamps never enter persistence without a finite bound. */
-export function boundedGitHubRetryAt(value: unknown, now = Date.now()) {
+function boundedGitHubRetryAt(value: unknown, now: number) {
   const parsed = v.safeParse(timestampSchema, value);
   return parsed.success && parsed.output >= now ? parsed.output : null;
 }
@@ -40,8 +40,4 @@ export function githubRetryAt(headers: Headers, now = Date.now()) {
   return reset && /^\d+$/.test(reset)
     ? boundedGitHubRetryAt(Number(reset) * 1000, now)
     : null;
-}
-
-export function githubWritebackRetryAt(value: unknown, now = Date.now()) {
-  return Math.max(now + 300_000, boundedGitHubRetryAt(value, now) ?? 0);
 }

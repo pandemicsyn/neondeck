@@ -50,7 +50,8 @@ describe('app database migrator', () => {
     const database = new DatabaseSync(databasePath, { readOnly: true });
     try {
       expect(tableExists(database, 'notifications')).toBe(true);
-      expect(tableExists(database, 'factory_writeback_records')).toBe(true);
+      expect(tableExists(database, 'factory_work_items')).toBe(false);
+      expect(tableExists(database, 'coding_runs')).toBe(false);
       expect(tableExists(database, 'briefing_profiles')).toBe(true);
       expect(tableExists(database, 'briefing_runs')).toBe(true);
       expect(tableExists(database, 'pr_watch_event_watermarks')).toBe(true);
@@ -67,6 +68,144 @@ describe('app database migrator', () => {
       database.close();
     }
   });
+
+  it.each(['before delivery', 'after delivery'] as const)(
+    'retires populated factory state from a database created %s',
+    async (stage) => {
+      const root = await tempDir();
+      const databasePath = join(root, 'neondeck.db');
+      const oldMigrations = join(root, 'pre-removal-migrations');
+      await mkdir(oldMigrations);
+      const deliveryMigration = '20260906182858_factory_delivery';
+      for (const entry of await readdir(appDbMigrationsFolder())) {
+        if (entry.endsWith('_remove_factory')) continue;
+        if (stage === 'before delivery' && entry >= deliveryMigration) continue;
+        await cp(
+          join(appDbMigrationsFolder(), entry),
+          join(oldMigrations, entry),
+          { recursive: true },
+        );
+      }
+      applyAppDbMigrations(databasePath, { migrationsFolder: oldMigrations });
+      const before = new DatabaseSync(databasePath);
+      try {
+        before.exec(`
+        INSERT INTO factory_sources (id, request_key, record)
+        VALUES ('source-1', 'request-1', '{}');
+        INSERT INTO factory_work_items (id, source_id, record)
+        VALUES ('task-1', 'source-1', '{}');
+        INSERT INTO factory_spec_revisions (work_id, version, record)
+        VALUES ('task-1', 1, '{}');
+        INSERT INTO worktrees (id, repo_id, repo_full_name, github_owner, github_name,
+          base_ref, head_ref, local_path, storage_kind, lifecycle_status, direct_push_allowed,
+          created_by, created_at, updated_at)
+        VALUES
+          ('old-checkout', 'repo', 'owner/repo', 'owner', 'repo', 'main', 'candidate',
+            '/example/candidate', 'home', 'succeeded', 1, 'test', '2026-09-07', '2026-09-07'),
+          ('other-checkout', 'repo', 'owner/repo', 'owner', 'repo', 'main', 'review',
+            '/example/review', 'home', 'ready', 0, 'test', '2026-09-07', '2026-09-07');
+        INSERT INTO coding_runs (run_id, attempt_id, request_id, work_item_id, release_id,
+          worktree_id, record_json)
+        VALUES ('run-1', 'attempt-1', 'request-2', 'task-1', 'release-1', 'old-checkout', '{}');
+        INSERT INTO coding_run_events (run_id, version, type, status, created_at)
+        VALUES ('run-1', 1, 'created', 'running', '2026-09-07');
+        INSERT INTO prepared_diffs (id, worktree_id, repo_id, repo_full_name, title,
+          source_worktree_path, base_ref, head_ref, status, push_approval_status,
+          verification_status, created_by, created_at, updated_at)
+        VALUES ('candidate-1', 'old-checkout', 'repo', 'owner/repo', 'Review candidate',
+          '/example/candidate', 'main', 'candidate', 'prepared', 'pending',
+          'not-run', 'test', '2026-09-07', '2026-09-07');
+        INSERT INTO prepared_diff_approvals (id, prepared_diff_id, worktree_id,
+          approval_type, status, requested_at, updated_at)
+        VALUES ('approval-1', 'candidate-1', 'old-checkout', 'push', 'pending',
+          '2026-09-07', '2026-09-07');
+        INSERT INTO pr_watches (id, repo_id, repo_full_name, github_owner, github_name,
+          pr_number, desired_terminal_state, status, autopilot_mode, created_by, created_at, updated_at)
+        VALUES
+          ('watch-1', 'repo', 'owner/repo', 'owner', 'repo', 1, 'merged', 'active',
+            'autofix-with-approval', 'factory-delivery', '2026-09-07', '2026-09-07'),
+          ('watch-2', 'repo', 'owner/repo', 'owner', 'repo', 2, 'merged', 'active',
+            'autofix-with-approval', 'user', '2026-09-07', '2026-09-07');
+        INSERT INTO notifications (id, level, title, message, created_at)
+        VALUES ('note-1', 'info', 'Keep', 'Retained across upgrade', '2026-09-07');
+      `);
+        if (stage === 'after delivery') {
+          before.exec(`
+            INSERT INTO factory_delivery_pipelines (pipeline_id, release_id, initial_run_id,
+              initial_attempt_id, work_item_id, repo_id, branch, pr_number, record_json)
+            VALUES ('pipeline-1', 'release-1', 'run-1', 'attempt-1', 'task-1', 'repo',
+              'candidate', 3, '{}');
+            INSERT INTO worktrees (id, repo_id, repo_full_name, github_owner, github_name,
+              base_ref, head_ref, local_path, storage_kind, lifecycle_status,
+              owning_workflow_run_id, created_by, created_at, updated_at)
+            VALUES ('published-checkout', 'repo', 'owner/repo', 'owner', 'repo', 'main',
+              'candidate', '/example/published', 'home', 'succeeded',
+              'factory-delivery:pipeline-1', 'factory-delivery', '2026-09-07', '2026-09-07');
+            INSERT INTO pr_watches (id, repo_id, repo_full_name, github_owner, github_name,
+              pr_number, desired_terminal_state, status, autopilot_mode, created_by,
+              created_at, updated_at)
+            VALUES ('watch-3', 'repo', 'owner/repo', 'owner', 'repo', 3, 'merged', 'active',
+              'autofix-push-when-safe', 'user', '2026-09-07', '2026-09-07');
+          `);
+        }
+      } finally {
+        before.close();
+      }
+
+      const { applied, backupPath } = applyAppDbMigrations(databasePath);
+      expect(applied.at(-1)).toMatch(/_remove_factory$/);
+      expect(applied.includes(deliveryMigration)).toBe(
+        stage === 'before delivery',
+      );
+      expect(backupPath).toBeTruthy();
+      const after = new DatabaseSync(databasePath, { readOnly: true });
+      const backup = new DatabaseSync(backupPath!, { readOnly: true });
+      try {
+        expect(tableExists(after, 'factory_sources')).toBe(false);
+        expect(tableExists(after, 'factory_work_items')).toBe(false);
+        expect(tableExists(after, 'factory_spec_revisions')).toBe(false);
+        expect(
+          after
+            .prepare('SELECT id, lifecycle_status FROM worktrees ORDER BY id')
+            .all(),
+        ).toEqual([
+          { id: 'old-checkout', lifecycle_status: 'archived' },
+          { id: 'other-checkout', lifecycle_status: 'ready' },
+          ...(stage === 'after delivery'
+            ? [{ id: 'published-checkout', lifecycle_status: 'archived' }]
+            : []),
+        ]);
+        expect(
+          after.prepare('SELECT status FROM prepared_diffs').get()?.status,
+        ).toBe('abandoned');
+        expect(
+          after.prepare('SELECT status FROM prepared_diff_approvals').get()
+            ?.status,
+        ).toBe('superseded');
+        expect(
+          after
+            .prepare('SELECT id, autopilot_mode FROM pr_watches ORDER BY id')
+            .all(),
+        ).toEqual([
+          { id: 'watch-1', autopilot_mode: 'notify-only' },
+          { id: 'watch-2', autopilot_mode: 'autofix-with-approval' },
+          ...(stage === 'after delivery'
+            ? [{ id: 'watch-3', autopilot_mode: 'notify-only' }]
+            : []),
+        ]);
+        expect(after.prepare('SELECT id FROM notifications').get()?.id).toBe(
+          'note-1',
+        );
+        expect(
+          backup.prepare('SELECT id FROM factory_work_items').get()?.id,
+        ).toBe('task-1');
+      } finally {
+        after.close();
+        backup.close();
+      }
+      expect(readAppDbMigrationStatus(databasePath).ok).toBe(true);
+    },
+  );
 
   it('refuses an unjournaled non-empty pre-baseline database', async () => {
     const root = await tempDir();
@@ -109,39 +248,6 @@ describe('app database migrator', () => {
     expect(readAppDbMigrationStatus(databasePath).message).toContain(
       'predates the current Neondeck baseline',
     );
-  });
-  it('adds factory writeback to an existing ingress home without losing retained records', async () => {
-    const root = await tempDir();
-    const databasePath = join(root, 'neondeck.db');
-    const parentMigrations = join(root, 'parent-migrations');
-    await mkdir(parentMigrations);
-    for (const entry of await readdir(appDbMigrationsFolder())) {
-      if (entry.includes('factory_writeback')) continue;
-      await cp(
-        join(appDbMigrationsFolder(), entry),
-        join(parentMigrations, entry),
-        { recursive: true },
-      );
-    }
-    applyAppDbMigrations(databasePath, { migrationsFolder: parentMigrations });
-    const before = new DatabaseSync(databasePath);
-    before
-      .prepare('INSERT INTO factory_github_sync(id,record) VALUES(?,?)')
-      .run('retained-source-cursor', '{"page":3,"offset":7}');
-    before.close();
-    const result = applyAppDbMigrations(databasePath);
-    expect(result.applied).toEqual([
-      expect.stringContaining('factory_writeback'),
-    ]);
-    const after = new DatabaseSync(databasePath);
-    expect(
-      after
-        .prepare('SELECT record FROM factory_github_sync WHERE id=?')
-        .get('retained-source-cursor')?.record,
-    ).toBe('{"page":3,"offset":7}');
-    expect(tableExists(after, 'factory_writeback_records')).toBe(true);
-    after.close();
-    expect(applyAppDbMigrations(databasePath).applied).toEqual([]);
   });
   it('cleans an upgraded runtime home while preserving watch feedback state', async () => {
     const root = await tempDir();

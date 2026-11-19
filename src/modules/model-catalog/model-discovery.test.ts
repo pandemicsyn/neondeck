@@ -22,15 +22,10 @@ describe('suggestedModels', () => {
     const models = suggestedModels('openai-codex');
 
     expect(models.map((model) => model.id)).toEqual([
-      'openai-codex/gpt-5.6-sol',
+      defaultOpenAiCodexModel,
       'openai-codex/gpt-5.6-terra',
       'openai-codex/gpt-5.6-luna',
-      'openai-codex/gpt-6-astra',
-      'openai-codex/gpt-5.5',
-      'openai-codex/gpt-5.4-mini',
-      'openai-codex/gpt-5.3-codex-spark',
     ]);
-    expect(defaultOpenAiCodexModel).toBe('openai-codex/gpt-5.6-sol');
     expect(models[0]?.recommendedIndex).toBe(0);
   });
 

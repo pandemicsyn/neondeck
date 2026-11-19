@@ -1,12 +1,11 @@
-import { privateServerUrl } from '../lib/server-address';
+import { resolveServerPort } from '../lib/server-url';
+export { defaultServerPort, resolveServerPort } from '../lib/server-url';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Transform } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import type { RuntimePaths } from '../runtime-home';
-
-export const defaultServerPort = 3583;
 
 export type RunBuiltServerOptions = {
   port?: number | string;
@@ -103,32 +102,16 @@ export function rewriteServerLogLine(
   port: number,
   runtimeHome?: string,
 ) {
-  if (
-    !/^\[flue\] Server listening on http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+\r?$/.test(
-      line,
-    )
-  ) {
+  if (!/^\[flue\] Server listening on http:\/\/localhost:\d+\r?$/.test(line)) {
     return line;
   }
 
   return [
     '[neondeck] Server ready',
-    `  dashboard  ${privateServerUrl(port)}/`,
+    `  dashboard  http://127.0.0.1:${port}/`,
     ...(runtimeHome ? [`  home       ${runtimeHome}`] : []),
     '  mode       foreground (Ctrl+C to stop)',
   ].join('\n');
-}
-
-export function resolveServerPort(value: number | string | undefined) {
-  const raw = value ?? process.env.NEONDECK_PORT ?? process.env.PORT;
-  if (raw === undefined || raw === '') return defaultServerPort;
-  const port = typeof raw === 'number' ? raw : Number(raw);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(
-      `Port must be an integer between 1 and 65535, got ${JSON.stringify(raw)}.`,
-    );
-  }
-  return port;
 }
 
 function createServerOutputTransform(port: number, runtimeHome?: string) {

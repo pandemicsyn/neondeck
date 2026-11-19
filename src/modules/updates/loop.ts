@@ -50,12 +50,3 @@ export function startUpdateCheckLoop(
   updateLoops.set(paths.home, { initial, interval });
   return { initial, interval };
 }
-
-export function stopUpdateCheckLoop(paths: RuntimePaths) {
-  const loop = updateLoops.get(paths.home);
-  if (loop) {
-    clearTimeout(loop.initial);
-    clearInterval(loop.interval);
-  }
-  updateLoops.delete(paths.home);
-}

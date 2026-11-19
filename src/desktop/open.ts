@@ -1,5 +1,3 @@
-import { privateServerUrl } from '../lib/server-address';
-import { loadNeondeckEnv } from '../modules/runtime/env';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
@@ -131,12 +129,11 @@ export async function openDashboard(
   options: OpenDashboardOptions,
   deps: OpenDependencies = {},
 ): Promise<OpenDashboardLaunch> {
-  loadNeondeckEnv(options.paths, { includeDevFallback: false });
   const serviceStatus = await (deps.readServiceStatus ?? readServiceStatus)(
     options.paths,
   );
   const port = resolveOpenPort(options.port, serviceStatus, options.paths.home);
-  const url = privateServerUrl(port);
+  const url = `http://127.0.0.1:${port}`;
   const warnings: string[] = [];
   const profiles = await (deps.readProfiles ?? readWindowProfiles)(
     options.paths,

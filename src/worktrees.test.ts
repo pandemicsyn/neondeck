@@ -608,6 +608,39 @@ describe('worktree runtime foundation', () => {
     await expect(stat(clean.localPath)).rejects.toThrow(/ENOENT|no such file/i);
   });
 
+  it('retains archived checkouts even during forced cleanup', async () => {
+    const { paths } = await fixture();
+    const checkout = worktreeFrom(
+      await createWorktree({ repoId: 'sample', headRef: 'feature' }, paths),
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          "UPDATE worktrees SET lifecycle_status = 'archived' WHERE id = ?",
+        )
+        .run(checkout.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      cleanupWorktrees({ force: true }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      results: [],
+    });
+    await expect(
+      cleanupWorktrees({ worktreeId: checkout.id, force: true }, paths),
+    ).resolves.toMatchObject({ error: { code: 'WORKTREE_ARCHIVED' } });
+    await expect(
+      syncWorktree({ worktreeId: checkout.id }, paths),
+    ).resolves.toMatchObject({
+      error: { code: 'WORKTREE_ARCHIVED' },
+    });
+    expect((await stat(checkout.localPath)).isDirectory()).toBe(true);
+  });
+
   it('revalidates managed worktree identity immediately before cleanup', async () => {
     const { paths } = await fixture();
     const victim = worktreeFrom(

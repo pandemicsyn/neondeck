@@ -1,14 +1,8 @@
-/// <reference types="vite/client" />
 import { createApp } from './create-app';
 
 export { createApp, resolveStaticRoot } from './create-app';
 
-const app = await createApp({
-  // Dev's loader and production's listener host own their service lifecycles.
-  runtimeServices:
-    !import.meta.env?.DEV && process.env.NEONDECK_MANAGED_HOST !== '1',
-  requestLogging: true,
-});
+const app = await createApp({ runtimeServices: true, requestLogging: true });
 
 process.once('SIGINT', () => {
   console.info('[neondeck] Server stopping signal=SIGINT');

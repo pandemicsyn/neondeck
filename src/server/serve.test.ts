@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { localServerUrl } from '../lib/server-url';
 import {
   defaultServerPort,
   formatServerStop,
@@ -28,6 +29,21 @@ describe('server serve options', () => {
   it('accepts valid CLI and environment port values', () => {
     expect(resolveServerPort('3599')).toBe(3599);
     expect(resolveServerPort(4600)).toBe(4600);
+  });
+
+  it('uses the Neondeck server port for local API clients', () => {
+    const previousPort = process.env.PORT;
+    const previousNeondeckPort = process.env.NEONDECK_PORT;
+    try {
+      process.env.PORT = '3901';
+      process.env.NEONDECK_PORT = '3902';
+      expect(localServerUrl()).toBe('http://127.0.0.1:3902');
+      delete process.env.NEONDECK_PORT;
+      expect(localServerUrl()).toBe('http://127.0.0.1:3901');
+    } finally {
+      restoreEnvValue('PORT', previousPort);
+      restoreEnvValue('NEONDECK_PORT', previousNeondeckPort);
+    }
   });
 
   it('rejects invalid ports with a controlled message', () => {

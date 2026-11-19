@@ -203,7 +203,8 @@ it('constructs rate-limit errors safely for overflowing headers', async () => {
     ),
   );
   await expect(read()).rejects.toMatchObject({
-    retry: { retryAt: null, rateLimited: true },
+    status: 429,
+    message: 'GitHub request was rate limited with 429.',
   } satisfies Partial<GitHubApiError>);
 });
 

@@ -14,24 +14,14 @@ const sourceRoots = ['src', 'web/src', 'shared'];
 const sourceExtensions = new Set(['.ts', '.tsx']);
 
 const backendLayers = new Map([
-  ['src/modules/factory-delivery/store.ts', 2],
-  ['src/modules/factory-delivery/delivery-aggregate.ts', 2],
-  ['src/modules/factory-delivery/delivery-persistence.ts', 2],
-  ['src/modules/factory-delivery/delivery-commands.ts', 2],
-  ['src/modules/factory-delivery/delivery-ownership.ts', 2],
-  ['src/modules/factory-delivery/progress-domain.ts', 2],
-  ['src/modules/factory-delivery/progress-store.ts', 2],
   ['src/lib', 0],
   ['src/runtime-home', 1],
   ['src/modules/app-state', 2],
-  ['src/modules/factory-observability', 2],
-  ['src/modules/factory-diagnostics', 4],
   ['src/modules/runtime', 2],
   ['src/modules/autonomous-audit', 2],
   ['src/repo-edit', 2],
   ['src/sandboxes', 2],
   ['src/modules/github', 2],
-  ['src/modules/linear', 2],
   ['src/modules/worktrees', 2],
   ['src/modules/sessions', 2],
   ['src/modules/repos', 2],
@@ -39,17 +29,14 @@ const backendLayers = new Map([
   ['src/modules/memory', 2],
   ['src/modules/prepared-diffs', 2],
   ['src/modules/execution-policy', 2],
-  ['src/modules/factory', 3],
   ['src/modules/config', 3],
   ['src/modules/execution', 3],
   ['src/modules/kilo', 3],
-  ['src/modules/coding-runs', 2],
   ['src/modules/watches', 3],
   ['src/modules/pr-events', 3],
   ['src/modules/reports', 3],
   ['src/modules/autopilot-policy', 3],
   ['src/modules/worktree-verification', 3],
-  ['src/modules/factory-delivery', 4],
   ['src/modules/docs-drift', 4],
   ['src/modules/issue-triage', 4],
   ['src/modules/hygiene', 4],
@@ -72,9 +59,6 @@ const compatibilityShimLayers = new Map([
 // Flue 2 admissions must pass the concrete agent function to init()/dispatch().
 // Keep these reverse edges explicit and narrow instead of relaxing module layers.
 const allowedLayerBridges = new Set([
-  'src/modules/factory-delivery/reviewer.ts -> src/agents/factory-reviewer.ts',
-  'src/modules/factory-delivery/progress-reviewer.ts -> src/agents/factory-progress-reviewer.ts',
-  'src/modules/factory/planning-dispatch.ts -> src/agents/factory-planner.ts',
   'src/modules/autopilot/owner/dispatch.ts -> src/agents/pr-autopilot-owner.ts',
   'src/modules/autopilot/owner/loop.ts -> src/agents/pr-autopilot-owner.ts',
   'src/modules/autopilot/owner/settlement.ts -> src/agents/pr-autopilot-owner.ts',
@@ -84,15 +68,6 @@ const allowedLayerBridges = new Set([
   'src/modules/repos/providers.ts -> src/modules/runtime/agent-config.ts',
   'src/modules/repos/runtime-providers.ts -> src/modules/runtime/env.ts',
   'src/modules/sessions/approval-nudges.ts -> src/agents/display-assistant.ts',
-]);
-
-// These exact public entrypoints expose only process/output and signed-artifact
-// primitives to detached workers. Layer checks still apply; no private-module
-// exception or wildcard is granted. The verification worker build-graph test
-// independently forbids action/model/runtime dependencies through these entries.
-const workerPublicEntrypoints = new Set([
-  'src/modules/execution/worker.ts',
-  'src/modules/coding-runs/worker.ts',
 ]);
 
 const frontendApiHelperImports = new Set(['web/src/lib/query.ts']);
@@ -206,8 +181,6 @@ function checkBackendImport(sourceRel, targetRel) {
     sourceModule &&
     targetModule &&
     sourceModule !== targetModule &&
-    targetRel !== 'src/modules/factory-delivery/store.ts' &&
-    !workerPublicEntrypoints.has(targetRel) &&
     targetRel !== `src/modules/${targetModule}/index.ts`
   ) {
     violations.push({

@@ -17,6 +17,7 @@ import { defaultSqliteBusyTimeoutMs } from '../../lib/sqlite';
 import { resolveShippedAsset } from '../assets';
 
 const drizzleMigrationsTable = '__drizzle_migrations';
+const codingRunsRebuildMigration = '20260906182858_factory_delivery';
 const defaultMigrationsFolder = resolveShippedAsset(
   'src/runtime-home/app-db/migrations',
   'assets/migrations',
@@ -231,6 +232,16 @@ export function applyAppDbMigrations(
 
   try {
     database.exec('PRAGMA busy_timeout = 5000;');
+    // SQLite ignores the rebuild migration's foreign_keys pragma inside a
+    // transaction. Preserve its shipped hash and validate the final schema.
+    const rebuildsCodingRuns =
+      migrations.some(
+        (migration) => migration.name === codingRunsRebuildMigration,
+      ) &&
+      !readJournal(database).some(
+        (row) => row.name === codingRunsRebuildMigration,
+      );
+    if (rebuildsCodingRuns) database.exec('PRAGMA foreign_keys = OFF;');
     database.exec('BEGIN IMMEDIATE;');
     transactionOpen = true;
 
@@ -288,6 +299,12 @@ export function applyAppDbMigrations(
       insertJournalRow(database, migration);
     }
 
+    if (
+      rebuildsCodingRuns &&
+      database.prepare('PRAGMA foreign_key_check;').get()
+    ) {
+      throw new Error('A foreign key is invalid after applying migrations.');
+    }
     database.exec('COMMIT;');
     transactionOpen = false;
 

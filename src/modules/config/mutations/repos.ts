@@ -13,7 +13,6 @@ import {
 } from '../result';
 import { recordConfigChange } from '../history';
 import { writeJsonAtomicSync } from '../../../runtime-home/files';
-import { invalidateFactoryRepoContext } from '../../factory';
 import {
   type RepoConfig,
   type RepoRegistry,
@@ -695,9 +694,7 @@ function commitRegistry(
   action: string,
   target: string,
 ): ConfigActionResult | undefined {
-  // Detect stale discovery/read snapshots when observed. The synchronous check,
-  // revocation and replacement serialize with approvals in this process only;
-  // another process can race the check/write window (no multi-process CAS).
+  // Keep the stale-state check and replacement synchronous within this process.
   const live = readRuntimeJsonSync(paths.repos, parseRepoRegistry);
   if (!isDeepStrictEqual(live, before))
     return failResult(action, paths, [paths.repos], {
@@ -709,18 +706,5 @@ function commitRegistry(
       message: `Repository "${target}" already matched the requested values.`,
       data: { repo: after.repos.find((repo) => repo.id === target) },
     });
-  for (const id of new Set(
-    [...before.repos, ...after.repos].map((repo) => repo.id),
-  )) {
-    if (
-      !isDeepStrictEqual(
-        before.repos.find((repo) => repo.id === id),
-        after.repos.find((repo) => repo.id === id),
-      )
-    )
-      invalidateFactoryRepoContext(id, paths);
-  }
-  // If replacement fails, conservative durable revocation remains; no cross-store
-  // transaction or provider CAS is claimed.
   writeJsonAtomicSync(paths.repos, after);
 }
